@@ -20,7 +20,9 @@ app.get("/api/config", (_req, res) => {
     wallet: Keypair.fromSecret(config.agentSecret).publicKey(),
     explorerUrl: config.explorerUrl,
     apiBaseUrl: config.apiBaseUrl,
-    brain: config.ai.planner === "ai" ? `OpenAI ${config.ai.model}` : "Scripted plan (no AI)",
+    defaultPlanner: config.ai.planner,
+    aiAvailable: Boolean(config.ai.apiKey && config.ai.model),
+    aiModel: config.ai.model || null,
     todayUsd: spentTodayUsd(),
   });
 });
@@ -56,7 +58,9 @@ app.get("/api/run", async (req, res) => {
   });
 
   try {
-    await runAgent(task, send, { approve });
+    // The Brain switch on the page picks the planner per run; anything else falls back to .env.
+    const planner = ["ai", "scripted"].includes(req.query.planner) ? req.query.planner : config.ai.planner;
+    await runAgent(task, send, { approve, planner });
   } catch (e) {
     send({ type: "fatal", message: e.message });
   } finally {

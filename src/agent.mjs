@@ -178,9 +178,11 @@ async function scriptedPlan(task, wallet) {
 // ── The agent ──────────────────────────────────────────────
 // emit(event) reports every step, so the terminal and the console can show it live.
 // approve({ url, why, priceUsd }) → true/false. Defaults to "no": nothing big is paid without a human.
-export async function runAgent(task, emit = () => {}, { approve = async () => false } = {}) {
+// planner: "ai" or "scripted" for this run; defaults to AGENT_PLANNER in .env.
+export async function runAgent(task, emit = () => {}, { approve = async () => false, planner = config.ai.planner } = {}) {
+  if (planner === "ai" && !(config.ai.apiKey && config.ai.model))
+    throw new Error("AI brain needs OPENAI_API_KEY and OPENAI_MODEL in .env");
   const wallet = createWallet(emit, approve);
-  const planner = config.ai.planner;
   emit({
     type: "start", task, planner, model: planner === "ai" ? config.ai.model : null,
     todayUsd: spentTodayUsd(), rules: RULES, wallet: agentPub, walletUsdc: await walletUsdc(),

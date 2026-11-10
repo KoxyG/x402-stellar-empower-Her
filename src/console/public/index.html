@@ -56,6 +56,10 @@
   #result p { margin: 6px 0; }
   #result .answer { font-size: 16px; color: var(--text); }
   .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .brain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 12px; font-size: 14px; }
+  .brain label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .brain label.off { opacity: .5; cursor: not-allowed; }
+  .brain small { color: var(--muted); }
   .examples .ex { font-weight: 500; font-size: 13px; padding: 6px 10px; background: var(--chip); color: var(--accent);
                   text-align: left; }
   .detail.thought { font-style: italic; }
@@ -78,6 +82,13 @@
       <button id="run" type="submit">Run agent</button>
     </form>
     <!-- One-click demo tasks, so nothing needs typing on stream -->
+    <!-- Brain switch: run the same wallet and rules with or without an AI deciding what to buy -->
+    <div class="brain" role="radiogroup" aria-label="Agent brain">
+      <b>Brain:</b>
+      <label><input type="radio" name="planner" value="scripted"> Scripted (no AI)</label>
+      <label id="aiLabel"><input type="radio" name="planner" value="ai"> <span id="aiText">AI agent</span></label>
+      <small id="brainNote"></small>
+    </div>
     <div class="examples" id="examples">
       <button type="button" class="ex">Is today a good day to install solar panels in Lagos?</button>
       <button type="button" class="ex">Compare solar inverter prices in Lagos and give me the answer in Yoruba</button>
@@ -122,7 +133,7 @@
     $("network").textContent = cfg.network.toUpperCase();
     const f = $("facts"); f.replaceChildren();
     const fact = (label, value) => { const s = el("span", null, `${label}: `); s.append(el("b", null, value)); f.append(s); };
-    fact("Brain", cfg.brain);
+    setupBrainSwitch();
     fact("Budget", usd(cfg.rules.taskBudgetUsd));
     fact("Max per request", usd(cfg.rules.maxPerRequestUsd));
     fact("Ask me above", usd(cfg.rules.approveAboveUsd));
@@ -134,6 +145,27 @@
     const bal = el("b", null, ""); bal.id = "balance"; w.append(bal);
     f.append(w);
     setSpent(0);
+  }
+
+  // Brain switch: default from .env; AI disabled if no OpenAI key/model is configured.
+  const selectedPlanner = () => document.querySelector('input[name="planner"]:checked')?.value || "scripted";
+  function setupBrainSwitch() {
+    const ai = document.querySelector('input[value="ai"]');
+    $("aiText").textContent = cfg.aiModel ? `AI agent: OpenAI ${cfg.aiModel}` : "AI agent";
+    if (!cfg.aiAvailable) {
+      ai.disabled = true; $("aiLabel").classList.add("off");
+      $("brainNote").textContent = "Add OPENAI_API_KEY and OPENAI_MODEL to .env to enable the AI.";
+    }
+    const start = cfg.aiAvailable ? cfg.defaultPlanner : "scripted";
+    document.querySelector(`input[value="${start}"]`).checked = true;
+    updateBrainNote();
+    document.querySelectorAll('input[name="planner"]').forEach((r) => r.addEventListener("change", updateBrainNote));
+  }
+  function updateBrainNote() {
+    if (!cfg.aiAvailable) return;
+    $("brainNote").textContent = selectedPlanner() === "scripted"
+      ? "Fixed plan: the task text is ignored. Shows x402 and the rules, without AI."
+      : "The AI reads the task and decides what to buy. Your rules still decide what gets paid.";
   }
 
   const showToday = (todayUsd) => { $("today").textContent = `${usd(todayUsd)} of ${usd(cfg.rules.dailyBudgetUsd)}`; };
@@ -222,7 +254,7 @@
     ev.preventDefault();
     $("run").disabled = true;
     let finished = false;
-    const source = new EventSource(`/api/run?task=${encodeURIComponent($("task").value)}`);
+    const source = new EventSource(`/api/run?task=${encodeURIComponent($("task").value)}&planner=${selectedPlanner()}`);
     const finish = () => { finished = true; source.close(); stopTimer(); $("run").disabled = false; };
     source.onmessage = (m) => {
       const e = JSON.parse(m.data);
