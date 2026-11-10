@@ -5,6 +5,8 @@
 //     Layer 2: the x402 client refuses anything above the amount the agent approved.
 //     Layer 3: the wallet itself. It can never spend more USDC than it holds.
 // Terminal: npm run agent ["your task"]   ·   The console imports runAgent().
+import fs from "node:fs";
+import readline from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Keypair, Horizon } from "@stellar/stellar-sdk";
 import { wrapFetchWithPaymentFromConfig, decodePaymentResponseHeader } from "@x402/fetch";
@@ -36,6 +38,18 @@ async function walletUsdc() {
   return Number(bal?.balance ?? 0);
 }
 
+// ── Daily spend log: survives between runs, so the daily budget holds ──
+const today = () => new Date().toISOString().slice(0, 10); // UTC date
+function readSpendLog() {
+  try { return JSON.parse(fs.readFileSync(RULES.spendLogFile, "utf8")); } catch { return []; }
+}
+const spentTodayUnits = () =>
+  readSpendLog().filter((e) => e.date === today()).reduce((sum, e) => sum + BigInt(e.units), 0n);
+export const spentTodayUsd = () => toUsd(spentTodayUnits());
+function appendSpendLog(entry) {
+  fs.writeFileSync(RULES.spendLogFile, JSON.stringify([...readSpendLog(), entry], null, 2));
+}
+
 // Read the price out of a 402 WITHOUT paying.
 function readQuote(res) {
   const header = res.headers.get("PAYMENT-REQUIRED");
@@ -46,7 +60,7 @@ function readQuote(res) {
 }
 
 // The decision. Returns which rule allowed or blocked the payment, in plain English.
-function decide(url, quote, spentUnits) {
+function decide(url, quote, spentUnits, todayUnits) {
   const host = new URL(url).host;
   if (!RULES.allowedHosts.includes(host))
     return { ok: false, rule: "allowlist", reason: `${host} is not on the allowlist` };
@@ -54,6 +68,11 @@ function decide(url, quote, spentUnits) {
     return { ok: false, rule: "price cap", reason: `$${quote.priceUsd} is over the $${RULES.maxPerRequestUsd} per-request cap` };
   if (spentUnits + quote.units > toUnits(RULES.taskBudgetUsd))
     return { ok: false, rule: "budget", reason: `would go over the $${RULES.taskBudgetUsd} task budget ($${toUsd(spentUnits)} spent)` };
+  if (todayUnits + quote.units > toUnits(RULES.dailyBudgetUsd))
+    return { ok: false, rule: "daily budget", reason: `would go over today's $${RULES.dailyBudgetUsd} limit ($${toUsd(todayUnits)} spent today)` };
+  // Within every limit, but big enough that a human should say yes first.
+  if (quote.units > toUnits(RULES.approveAboveUsd))
+    return { ok: "ask", rule: "needs approval", reason: `$${quote.priceUsd} is above the $${RULES.approveAboveUsd} approval threshold` };
   return { ok: true, rule: "within limits", reason: `$${quote.priceUsd} is within the cap and the budget` };
 }
 
@@ -67,7 +86,7 @@ function payingFetch(approvedUnits) {
 }
 
 // ── The wallet: every call, free or paid, goes through here ─
-function createWallet(emit) {
+function createWallet(emit, approve) {
   const payments = [];
   let spentUnits = 0n;
 
@@ -93,14 +112,26 @@ function createWallet(emit) {
     }
     emit({ type: "quote", url, priceUsd: quote.priceUsd, description: quote.description });
 
-    const decision = decide(url, quote, spentUnits);
+    const decision = decide(url, quote, spentUnits, spentTodayUnits());
     if (!decision.ok) {
       payments.push({ why, url, priceUsd: quote.priceUsd, paid: false, reason: decision.reason });
       emit({ type: "refused", url, ...decision });
       return { ok: false, reason: `${decision.rule}: ${decision.reason}` };
     }
 
-    emit({ type: "paying", url, priceUsd: quote.priceUsd, reason: decision.reason });
+    if (decision.ok === "ask") {
+      emit({ type: "approval", url, why, priceUsd: quote.priceUsd, reason: decision.reason });
+      // approve() returns true, false (declined) or "timeout" (nobody answered in time).
+      const answer = await approve({ url, why, priceUsd: quote.priceUsd });
+      if (answer !== true) {
+        const reason = answer === "timeout" ? "no answer in time, so declined" : "declined by you";
+        payments.push({ why, url, priceUsd: quote.priceUsd, paid: false, reason });
+        emit({ type: "refused", url, rule: "human", reason });
+        return { ok: false, reason: "the wallet owner declined this purchase" };
+      }
+    }
+
+    emit({ type: "paying", url, priceUsd: quote.priceUsd, reason: decision.ok === "ask" ? "approved by you" : decision.reason });
     try {
       const res = await payingFetch(quote.units)(url);
       const header = res.headers.get("PAYMENT-RESPONSE");
@@ -108,6 +139,8 @@ function createWallet(emit) {
       if (!res.ok || !settlement?.success) throw new Error(`payment not confirmed (HTTP ${res.status})`);
 
       spentUnits += quote.units;
+      appendSpendLog({ date: today(), at: new Date().toISOString(), why, url,
+                       units: String(quote.units), priceUsd: quote.priceUsd, tx: settlement.transaction });
       const entry = { why, url, priceUsd: quote.priceUsd, paid: true, tx: settlement.transaction, link: explorer.tx(settlement.transaction) };
       payments.push(entry);
       emit({ type: "paid", ...entry, spentUsd: toUsd(spentUnits) });
@@ -144,12 +177,13 @@ async function scriptedPlan(task, wallet) {
 
 // ── The agent ──────────────────────────────────────────────
 // emit(event) reports every step, so the terminal and the console can show it live.
-export async function runAgent(task, emit = () => {}) {
-  const wallet = createWallet(emit);
+// approve({ url, why, priceUsd }) → true/false. Defaults to "no": nothing big is paid without a human.
+export async function runAgent(task, emit = () => {}, { approve = async () => false } = {}) {
+  const wallet = createWallet(emit, approve);
   const planner = config.ai.planner;
   emit({
     type: "start", task, planner, model: planner === "ai" ? config.ai.model : null,
-    rules: RULES, wallet: agentPub, walletUsdc: await walletUsdc(),
+    todayUsd: spentTodayUsd(), rules: RULES, wallet: agentPub, walletUsdc: await walletUsdc(),
   });
 
   const answer = planner === "ai"
@@ -168,6 +202,17 @@ export async function runAgent(task, emit = () => {}) {
 }
 
 // ── Terminal output ────────────────────────────────────────
+// Terminal approval: asks y/N. Declines if there's no terminal to ask.
+async function askInTerminal({ why, priceUsd }) {
+  if (!process.stdin.isTTY) { console.log("   (no terminal to ask, so declined)"); return false; }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  // If input closes before an answer (Ctrl+D, piped input), treat it as "no" instead of hanging.
+  const closed = new Promise((resolve) => rl.once("close", () => resolve("")));
+  const answer = await Promise.race([rl.question(`   ? Approve paying $${priceUsd} for "${why}"? [y/N] `), closed]);
+  rl.close();
+  return /^y(es)?$/i.test(String(answer).trim());
+}
+
 function print(e) {
   const line = {
     start:   () => `\nTask: ${e.task}\nBrain: ${e.planner === "ai" ? `OpenAI ${e.model}` : "scripted plan"}\nRules: budget $${e.rules.taskBudgetUsd} · max $${e.rules.maxPerRequestUsd}/request · allowed: ${e.rules.allowedHosts.join(", ")}\nWallet: ${e.wallet.slice(0, 6)}… holds ${e.walletUsdc} ${usdc.code} (hard limit)\n`,
@@ -177,6 +222,7 @@ function print(e) {
     quote:   () => `   402: costs $${e.priceUsd}`,
     paying:  () => `   ✓ decision: pay (${e.reason}) … settling on Stellar`,
     paid:    () => `   ✓ paid · total spent $${e.spentUsd} · ${e.link}`,
+    approval: () => `   ⏸ needs your approval (${e.reason})`,
     refused: () => `   ✗ decision: refuse (${e.rule}: ${e.reason})`,
     error:   () => `   ✗ ${e.message}\n     ${e.hint}`,
     done:    () => `\nAnswer: ${e.summary}\nSpent $${e.spentUsd} of $${e.budgetUsd} budget · ${e.payments.filter((p) => p.paid).length} paid, ${e.payments.filter((p) => !p.paid).length} refused/failed\nWallet now holds ${e.walletUsdc} ${usdc.code}\n`,
@@ -187,5 +233,5 @@ function print(e) {
 // Run directly from the terminal (not when imported by the console).
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const task = process.argv.slice(2).join(" ") || "Compare solar inverter prices in Lagos";
-  await runAgent(task, print);
+  await runAgent(task, print, { approve: askInTerminal });
 }

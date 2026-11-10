@@ -6,6 +6,9 @@
 # Facilitator's private notes (not for teams)
 docs/guide-fixes.md
 
+# The agent's spend log (local record of payments)
+.agent-spend-log.json
+
 node_modules/
 .DS_Store
 *.log

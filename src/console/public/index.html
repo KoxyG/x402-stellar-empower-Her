@@ -54,6 +54,15 @@
   .empty { color: var(--muted); font-size: 14px; }
   #result { margin-top: 16px; display: none; }
   #result p { margin: 6px 0; }
+  #result .answer { font-size: 16px; color: var(--text); }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .examples .ex { font-weight: 500; font-size: 13px; padding: 6px 10px; background: var(--chip); color: var(--accent);
+                  text-align: left; }
+  .detail.thought { font-style: italic; }
+  .detail.ask { color: var(--text); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+  .detail.ask button { font-size: 13px; padding: 5px 12px; margin-left: 6px; }
+  .detail.ask button.approve { background: var(--ok); }
+  .detail.ask button.decline { background: var(--no); }
 </style>
 </head>
 <body>
@@ -68,6 +77,12 @@
       <input type="text" id="task" maxlength="200" value="Compare solar inverter prices in Lagos" aria-label="Task for the agent">
       <button id="run" type="submit">Run agent</button>
     </form>
+    <!-- One-click demo tasks, so nothing needs typing on stream -->
+    <div class="examples" id="examples">
+      <button type="button" class="ex">Is today a good day to install solar panels in Lagos?</button>
+      <button type="button" class="ex">Compare solar inverter prices in Lagos and give me the answer in Yoruba</button>
+      <button type="button" class="ex">I'm pitching investors tomorrow. Get me the most complete, authoritative Lagos solar market report available.</button>
+    </div>
     <div class="facts" id="facts"></div>
     <div class="meter">
       <div class="bar"><div id="bar"></div></div>
@@ -87,7 +102,7 @@
   </div>
 
   <section class="panel" id="result">
-    <h2>Result</h2>
+    <h2>Answer</h2>
     <div id="resultBody"></div>
   </section>
 </main>
@@ -107,14 +122,23 @@
     $("network").textContent = cfg.network.toUpperCase();
     const f = $("facts"); f.replaceChildren();
     const fact = (label, value) => { const s = el("span", null, `${label}: `); s.append(el("b", null, value)); f.append(s); };
+    fact("Brain", cfg.brain);
     fact("Budget", usd(cfg.rules.taskBudgetUsd));
     fact("Max per request", usd(cfg.rules.maxPerRequestUsd));
+    fact("Ask me above", usd(cfg.rules.approveAboveUsd));
+    const t = el("span", null, "Today: "); const tb = el("b", null, ""); tb.id = "today"; t.append(tb); f.append(t);
+    showToday(cfg.todayUsd);
     fact("Allowed", cfg.rules.allowedHosts.join(", "));
     const w = el("span", null, "Wallet: ");
     w.append(link(`${cfg.explorerUrl}/account/${cfg.wallet}`, `${cfg.wallet.slice(0, 6)}…${cfg.wallet.slice(-4)}`));
     const bal = el("b", null, ""); bal.id = "balance"; w.append(bal);
     f.append(w);
     setSpent(0);
+  }
+
+  const showToday = (todayUsd) => { $("today").textContent = `${usd(todayUsd)} of ${usd(cfg.rules.dailyBudgetUsd)}`; };
+  async function refreshToday() {
+    try { showToday((await fetch("/api/config").then((r) => r.json())).todayUsd); } catch {}
   }
 
   function setSpent(spent) {
@@ -158,6 +182,21 @@
     },
     step(e) { current = el("li", "step"); current.append(el("div", "why", e.why)); $("timeline").append(current); },
     free() { addDetail("Free: no payment needed", "ok"); },
+    // The AI thinking out loud between tool calls.
+    thought(e) { addDetail(`AI: ${e.text}`, "thought"); },
+    // Pause: a human must decide. Buttons POST the answer back to the agent.
+    approval(e) {
+      const box = addDetail(`⏸ Needs your approval: ${e.reason}. `, "ask");
+      const answer = async (approved) => {
+        box.querySelectorAll("button").forEach((b) => (b.disabled = true));
+        box.append(el("b", approved ? "ok" : "no", approved ? " Approved by you" : " Declined by you"));
+        await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ approved }) });
+      };
+      const yes = el("button", "approve", "Approve"); yes.type = "button"; yes.onclick = () => answer(true);
+      const no = el("button", "decline", "Decline"); no.type = "button"; no.onclick = () => answer(false);
+      box.append(yes, no);
+    },
     quote(e) { const d = addDetail(""); d.append(el("span", "chip", "402")); d.append(`Payment required: ${usd(e.priceUsd)}`); },
     paying(e) { addDetail(`✓ Decision: pay (${e.reason})`, "ok"); startTimer(addDetail("Settling on Stellar…", "spin")); },
     paid(e) {
@@ -169,12 +208,12 @@
     error(e) { stopTimer(); addDetail(`✗ ${e.message}. ${e.hint}`, "no"); },
     done(e) {
       const body = $("resultBody"); body.replaceChildren();
-      body.append(el("p", null, e.summary));
-      if (e.translation) body.append(el("p", null, `Yoruba: ${e.translation}`));
+      body.append(el("p", "answer", e.summary));   // the AI's final answer
       const paid = e.payments.filter((p) => p.paid).length, refused = e.payments.length - paid;
       body.append(el("p", null, `Spent ${usd(e.spentUsd)} of ${usd(e.budgetUsd)} · ${paid} paid, ${refused} refused · wallet now ${e.walletUsdc} ${cfg.asset}`));
       $("result").style.display = "block";
       $("balance").textContent = ` ${e.walletUsdc} ${cfg.asset} (hard limit)`;
+      refreshToday();                               // update "Today: $x of $0.50"
     },
     fatal(e) { stopTimer(); addDetail(`✗ Stopped: ${e.message}`, "no"); },
   };
@@ -196,6 +235,10 @@
       if (!finished) addDetail("Connection closed. Is the console server running, or is a run already in progress?", "no");
       finish();
     };
+  });
+
+  $("examples").addEventListener("click", (ev) => {
+    if (ev.target.classList.contains("ex")) $("task").value = ev.target.textContent;
   });
 
   loadConfig().catch(() => { $("facts").textContent = "Could not load config. Is the console server running?"; });

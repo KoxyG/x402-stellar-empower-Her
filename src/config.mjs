@@ -54,6 +54,10 @@ export const config = Object.freeze({
     taskBudgetUsd: positiveNumber("AGENT_TASK_BUDGET_USD"),
     maxPerRequestUsd: positiveNumber("AGENT_MAX_PER_REQUEST_USD"),
     allowedHosts: (required("AGENT_ALLOWED_HOSTS") || "").split(",").map((h) => h.trim()).filter(Boolean),
+    approveAboveUsd: positiveNumber("AGENT_APPROVE_ABOVE_USD"),
+    approvalTimeoutSeconds: positiveNumber("AGENT_APPROVAL_TIMEOUT_SECONDS"),
+    dailyBudgetUsd: positiveNumber("AGENT_DAILY_BUDGET_USD"),
+    spendLogFile: required("AGENT_SPEND_LOG_FILE"),
   }),
   ai: Object.freeze({
     planner,
