@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Console</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e4e4df;
+    --accent: #3d5afe; --ok: #1b8a4b; --no: #c62828; --warn: #b26a00; --chip: #eef0ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121212; --panel: #1c1c1c; --text: #ececec; --muted: #9a9a9a; --line: #2e2e2e;
+            --accent: #8c9eff; --ok: #4caf7a; --no: #ef6b6b; --warn: #e0a040; --chip: #232846; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  .badge { font-size: 12px; font-weight: 700; letter-spacing: .06em; padding: 4px 10px; border-radius: 999px;
+           background: var(--warn); color: #fff; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  form { display: flex; gap: 8px; }
+  input[type=text] { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 8px;
+                     border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  button { font: inherit; font-weight: 600; padding: 10px 18px; border: 0; border-radius: 8px;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: progress; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .facts b { color: var(--text); font-weight: 600; }
+  .meter { margin-top: 12px; }
+  .bar { height: 10px; background: var(--line); border-radius: 999px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--ok); transition: width .4s ease; }
+  .meter small { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  ol { list-style: none; margin: 0; padding: 0; }
+  .step { padding: 10px 0; border-top: 1px solid var(--line); }
+  .step:first-child { border-top: 0; }
+  .step .why { font-weight: 600; }
+  .step .detail { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px;
+          background: var(--chip); color: var(--accent); margin-right: 6px; }
+  .ok { color: var(--ok); } .no { color: var(--no); }
+  .detail.ok { color: var(--ok); } .detail.no { color: var(--no); }
+  .spin::after { content: " ⏳"; }
+  .log li { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .log li:first-child { border-top: 0; }
+  .log .amt { font-variant-numeric: tabular-nums; font-weight: 700; margin-right: 6px; }
+  a { color: var(--accent); }
+  .empty { color: var(--muted); font-size: 14px; }
+  #result { margin-top: 16px; display: none; }
+  #result p { margin: 6px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Agent Console</h1>
+    <span class="badge" id="network">TESTNET</span>
+  </header>
+
+  <section class="panel">
+    <form id="form">
+      <input type="text" id="task" maxlength="200" value="Compare solar inverter prices in Lagos" aria-label="Task for the agent">
+      <button id="run" type="submit">Run agent</button>
+    </form>
+    <div class="facts" id="facts"></div>
+    <div class="meter">
+      <div class="bar"><div id="bar"></div></div>
+      <small id="spent">Spent $0 of budget</small>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>What the agent is doing</h2>
+      <ol id="timeline"><li class="empty">Give the agent a task and press Run.</li></ol>
+    </section>
+    <section class="panel">
+      <h2>Spend log</h2>
+      <ol class="log" id="log"><li class="empty">No payments yet.</li></ol>
+    </section>
+  </div>
+
+  <section class="panel" id="result">
+    <h2>Result</h2>
+    <div id="resultBody"></div>
+  </section>
+</main>
+
+<script>
+  // Everything the agent does arrives as an event from /api/run. Text is set with
+  // textContent (never innerHTML) so nothing from a task or a server can inject markup.
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const link = (href, text) => { const a = el("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; };
+  const usd = (n) => `$${Number(n).toFixed(3).replace(/\.?0+$/, "") || 0}`;
+
+  let cfg, current, timer;
+
+  async function loadConfig() {
+    cfg = await fetch("/api/config").then((r) => r.json());
+    $("network").textContent = cfg.network.toUpperCase();
+    const f = $("facts"); f.replaceChildren();
+    const fact = (label, value) => { const s = el("span", null, `${label}: `); s.append(el("b", null, value)); f.append(s); };
+    fact("Budget", usd(cfg.rules.taskBudgetUsd));
+    fact("Max per request", usd(cfg.rules.maxPerRequestUsd));
+    fact("Allowed", cfg.rules.allowedHosts.join(", "));
+    const w = el("span", null, "Wallet: ");
+    w.append(link(`${cfg.explorerUrl}/account/${cfg.wallet}`, `${cfg.wallet.slice(0, 6)}…${cfg.wallet.slice(-4)}`));
+    const bal = el("b", null, ""); bal.id = "balance"; w.append(bal);
+    f.append(w);
+    setSpent(0);
+  }
+
+  function setSpent(spent) {
+    const pct = Math.min(100, (spent / cfg.rules.taskBudgetUsd) * 100);
+    $("bar").style.width = `${pct}%`;
+    $("spent").textContent = `Spent ${usd(spent)} of ${usd(cfg.rules.taskBudgetUsd)} budget`;
+  }
+
+  // Adds a line under the current step (or to the timeline if no step has started yet).
+  function addDetail(text, cls) {
+    const d = el("div", `detail ${cls || ""}`, text);
+    (current ?? $("timeline")).append(d);
+    return d;
+  }
+
+  function logEntry(e, paid) {
+    const log = $("log");
+    log.querySelector(".empty")?.remove();
+    const li = el("li");
+    li.append(el("span", `amt ${paid ? "ok" : "no"}`, paid ? usd(e.priceUsd) : "✗"));
+    li.append(el("span", null, new URL(e.url).pathname.replace("/paid/", "")));
+    li.append(document.createElement("br"));
+    if (paid) li.append(link(e.link, `tx ${e.tx.slice(0, 8)}… ↗ explorer`));
+    else li.append(el("small", "no", `refused: ${e.reason}`));
+    log.append(li);
+  }
+
+  // Shows "Settling on Stellar… 7s" while the facilitator settles, so the wait is visible.
+  function startTimer(node) {
+    const t0 = Date.now();
+    timer = setInterval(() => { node.textContent = `Settling on Stellar… ${Math.round((Date.now() - t0) / 1000)}s`; }, 500);
+  }
+  const stopTimer = () => clearInterval(timer);
+
+  const handlers = {
+    start(e) {
+      current = null;
+      $("timeline").replaceChildren(); $("log").replaceChildren(el("li", "empty", "No payments yet."));
+      $("result").style.display = "none"; setSpent(0);
+      $("balance").textContent = ` ${e.walletUsdc} ${cfg.asset} (hard limit)`;
+    },
+    step(e) { current = el("li", "step"); current.append(el("div", "why", e.why)); $("timeline").append(current); },
+    free() { addDetail("Free: no payment needed", "ok"); },
+    quote(e) { const d = addDetail(""); d.append(el("span", "chip", "402")); d.append(`Payment required: ${usd(e.priceUsd)}`); },
+    paying(e) { addDetail(`✓ Decision: pay (${e.reason})`, "ok"); startTimer(addDetail("Settling on Stellar…", "spin")); },
+    paid(e) {
+      stopTimer(); current?.querySelector(".spin")?.classList.remove("spin");
+      const d = addDetail("✓ Paid · ", "ok"); d.append(link(e.link, "view on explorer ↗"));
+      setSpent(e.spentUsd); logEntry(e, true);
+    },
+    refused(e) { stopTimer(); addDetail(`✗ Decision: refuse (${e.rule}: ${e.reason})`, "no"); logEntry(e, false); },
+    error(e) { stopTimer(); addDetail(`✗ ${e.message}. ${e.hint}`, "no"); },
+    done(e) {
+      const body = $("resultBody"); body.replaceChildren();
+      body.append(el("p", null, e.summary));
+      if (e.translation) body.append(el("p", null, `Yoruba: ${e.translation}`));
+      const paid = e.payments.filter((p) => p.paid).length, refused = e.payments.length - paid;
+      body.append(el("p", null, `Spent ${usd(e.spentUsd)} of ${usd(e.budgetUsd)} · ${paid} paid, ${refused} refused · wallet now ${e.walletUsdc} ${cfg.asset}`));
+      $("result").style.display = "block";
+      $("balance").textContent = ` ${e.walletUsdc} ${cfg.asset} (hard limit)`;
+    },
+    fatal(e) { stopTimer(); addDetail(`✗ Stopped: ${e.message}`, "no"); },
+  };
+
+  $("form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    $("run").disabled = true;
+    let finished = false;
+    const source = new EventSource(`/api/run?task=${encodeURIComponent($("task").value)}`);
+    const finish = () => { finished = true; source.close(); stopTimer(); $("run").disabled = false; };
+    source.onmessage = (m) => {
+      const e = JSON.parse(m.data);
+      handlers[e.type]?.(e);
+      if (e.type === "done" || e.type === "fatal") finish();
+    };
+    // IMPORTANT: EventSource reconnects automatically, which would start a second (paid) run.
+    // Close on any error instead (also covers "agent already running").
+    source.onerror = () => {
+      if (!finished) addDetail("Connection closed. Is the console server running, or is a run already in progress?", "no");
+      finish();
+    };
+  });
+
+  loadConfig().catch(() => { $("facts").textContent = "Could not load config. Is the console server running?"; });
+</script>
+</body>
+</html>

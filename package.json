@@ -1,0 +1,28 @@
+{
+  "name": "stellar-x402-workshop",
+  "version": "1.0.0",
+  "description": "EmpowerHer workshop kit: agentic payments with x402 on Stellar testnet",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "check": "node scripts/check.mjs",
+    "peek": "node scripts/peek.mjs",
+    "server": "node src/server.mjs",
+    "client": "node src/client.mjs",
+    "agent": "node src/agent.mjs",
+    "console": "node src/console/app.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.4.1",
+    "@x402/core": "2.30.0",
+    "@x402/express": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "@x402/stellar": "2.30.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  }
+}
