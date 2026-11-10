@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Facilitator's private notes (not for teams)
+docs/guide-fixes.md
+
 node_modules/
 .DS_Store
 *.log
