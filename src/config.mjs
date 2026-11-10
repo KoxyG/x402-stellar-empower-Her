@@ -4,6 +4,7 @@
 import "dotenv/config";
 
 const missing = [];
+const invalid = [];
 const required = (key) => {
   const value = process.env[key]?.trim();
   if (!value) missing.push(key);
@@ -12,12 +13,12 @@ const required = (key) => {
 const optional = (key) => process.env[key]?.trim() || "";
 const positiveNumber = (key) => {
   const value = Number(required(key));
-  if (process.env[key] && !(value > 0)) missing.push(`${key} (must be a positive number)`);
+  if (process.env[key] && !(value > 0)) invalid.push(`${key} (must be a positive number)`);
   return value;
 };
 
 const active = required("FACILITATOR");
-if (active && !["primary", "backup"].includes(active)) missing.push('FACILITATOR (must be "primary" or "backup")');
+if (active && !["primary", "backup"].includes(active)) invalid.push('FACILITATOR (must be "primary" or "backup")');
 const F = active?.toUpperCase();
 
 export const config = Object.freeze({
@@ -56,8 +57,12 @@ export const config = Object.freeze({
 if (missing.length) {
   console.error(`Missing in .env: ${missing.join(", ")}`);
   console.error("→ Run npm run setup to fill them in from .env.example.");
-  process.exit(1);
 }
+if (invalid.length) {
+  console.error(`Invalid in .env: ${invalid.join(", ")}`);
+  console.error("→ Fix these values in .env.");
+}
+if (missing.length || invalid.length) process.exit(1);
 
 export const explorer = {
   account: (g) => `${config.explorerUrl}/account/${g}`,
