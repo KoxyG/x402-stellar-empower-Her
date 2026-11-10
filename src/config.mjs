@@ -21,6 +21,9 @@ const active = required("FACILITATOR");
 if (active && !["primary", "backup"].includes(active)) invalid.push('FACILITATOR (must be "primary" or "backup")');
 const F = active?.toUpperCase();
 
+const planner = required("AGENT_PLANNER");
+if (planner && !["ai", "scripted"].includes(planner)) invalid.push('AGENT_PLANNER (must be "ai" or "scripted")');
+
 export const config = Object.freeze({
   network: required("STELLAR_NETWORK"),
   networkPassphrase: required("STELLAR_NETWORK_PASSPHRASE"),
@@ -51,6 +54,13 @@ export const config = Object.freeze({
     taskBudgetUsd: positiveNumber("AGENT_TASK_BUDGET_USD"),
     maxPerRequestUsd: positiveNumber("AGENT_MAX_PER_REQUEST_USD"),
     allowedHosts: (required("AGENT_ALLOWED_HOSTS") || "").split(",").map((h) => h.trim()).filter(Boolean),
+  }),
+  ai: Object.freeze({
+    planner,
+    maxSteps: positiveNumber("AGENT_MAX_STEPS"),
+    // Only required when the AI planner is on, so "scripted" still works without a key.
+    apiKey: planner === "ai" ? required("OPENAI_API_KEY") : optional("OPENAI_API_KEY"),
+    model: planner === "ai" ? required("OPENAI_MODEL") : optional("OPENAI_MODEL"),
   }),
 });
 

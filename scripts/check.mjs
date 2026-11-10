@@ -1,6 +1,7 @@
 // Preflight before a demo: are both wallets and the facilitator ready?
 // Prints no secrets. Exits with code 1 if anything needs fixing.
 import { Keypair, Horizon, StrKey } from "@stellar/stellar-sdk";
+import OpenAI from "openai";
 import { config, explorer } from "../src/config.mjs";
 
 const horizon = new Horizon.Server(config.horizonUrl);
@@ -49,6 +50,17 @@ async function checkFacilitator() {
     : fail(`does not list ${config.network}`, "switch FACILITATOR in .env");
 }
 
+async function checkAi() {
+  if (config.ai.planner !== "ai") return console.log("\nBrain: scripted plan (no AI model)");
+  console.log(`\nBrain: OpenAI ${config.ai.model}`);
+  try {
+    await new OpenAI({ apiKey: config.ai.apiKey }).models.retrieve(config.ai.model);
+    ok("API key works and the model is available");
+  } catch (e) {
+    fail(`OpenAI said: ${e.status ?? ""} ${e.message}`, e.status === 401 ? "check OPENAI_API_KEY" : "check OPENAI_MODEL");
+  }
+}
+
 // ── Main ───────────────────────────────────────────────────
 console.log(`x402 preflight · ${config.network}`);
 
@@ -64,6 +76,7 @@ catch { fail("STELLAR_SECRET_KEY missing or not a secret key (S...)", "run: npm 
 if (agentPub) await checkWallet("Agent wallet", agentPub, { isAgent: true });
 
 await checkFacilitator();
+await checkAi();
 
 console.log(failures ? `\n✗ ${failures} thing(s) to fix before going live.\n` : "\n✓ Ready to demo.\n");
 process.exit(failures ? 1 : 0);

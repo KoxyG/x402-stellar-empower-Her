@@ -1,14 +1,17 @@
-// The agent: runs a task, meets paid APIs along the way, and decides for itself whether to pay.
-//   Layer 1: RULES below, checked in code before every payment.
-//   Layer 2: the x402 client refuses anything above the amount the agent approved.
-//   Layer 3: the wallet itself. It can never spend more USDC than it holds.
-// Terminal: npm run agent ["your task"]   ·   The console (step 7) imports runAgent().
+// The agent = a brain (planner) + a wallet (x402 + spending rules).
+//   Brain: AGENT_PLANNER=ai lets an AI model decide what to do; "scripted" runs a fixed plan.
+//   Wallet: every paid call goes through the rules below. The AI can ASK to buy; it can't bypass them.
+//     Layer 1: RULES (.env AGENT_*), checked in code before every payment.
+//     Layer 2: the x402 client refuses anything above the amount the agent approved.
+//     Layer 3: the wallet itself. It can never spend more USDC than it holds.
+// Terminal: npm run agent ["your task"]   ·   The console imports runAgent().
 import { pathToFileURL } from "node:url";
 import { Keypair, Horizon } from "@stellar/stellar-sdk";
 import { wrapFetchWithPaymentFromConfig, decodePaymentResponseHeader } from "@x402/fetch";
 import { createEd25519Signer } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
 import { config, explorer } from "./config.mjs";
+import { runAiPlan } from "./planner-ai.mjs";
 
 // ── Spending rules ─────────────────────────────────────────
 // Set in .env (AGENT_*), so a user can change the agent's limits without touching code.
@@ -63,27 +66,30 @@ function payingFetch(approvedUnits) {
   });
 }
 
-// ── The agent ──────────────────────────────────────────────
-// emit(event) reports every step, so the terminal and the console can show it live.
-export async function runAgent(task, emit = () => {}) {
+// ── The wallet: every call, free or paid, goes through here ─
+function createWallet(emit) {
   const payments = [];
   let spentUnits = 0n;
-  emit({ type: "start", task, rules: RULES, wallet: agentPub, walletUsdc: await walletUsdc() });
 
-  // Call a service. Free: use it. Paid: read the price, decide, then pay or refuse.
+  // Free: use it. Paid: read the price, decide, then pay or refuse.
+  // Returns { ok: true, data } or { ok: false, reason }.
   async function call(why, path) {
     const url = `${config.apiBaseUrl}${path}`;
     emit({ type: "step", why, url });
     const first = await fetch(url);
     if (first.status !== 402) {
+      if (!first.ok) {
+        emit({ type: "error", url, message: `HTTP ${first.status}`, hint: "The service returned an error." });
+        return { ok: false, reason: `service error (HTTP ${first.status})` };
+      }
       emit({ type: "free", url });
-      return first.json();
+      return { ok: true, data: await first.json() };
     }
 
     const quote = readQuote(first);
     if (!quote) {
       emit({ type: "refused", url, rule: "asset", reason: "no offer in our network and asset" });
-      return null;
+      return { ok: false, reason: "no offer in our network and asset" };
     }
     emit({ type: "quote", url, priceUsd: quote.priceUsd, description: quote.description });
 
@@ -91,7 +97,7 @@ export async function runAgent(task, emit = () => {}) {
     if (!decision.ok) {
       payments.push({ why, url, priceUsd: quote.priceUsd, paid: false, reason: decision.reason });
       emit({ type: "refused", url, ...decision });
-      return null;
+      return { ok: false, reason: `${decision.rule}: ${decision.reason}` };
     }
 
     emit({ type: "paying", url, priceUsd: quote.priceUsd, reason: decision.reason });
@@ -105,38 +111,56 @@ export async function runAgent(task, emit = () => {}) {
       const entry = { why, url, priceUsd: quote.priceUsd, paid: true, tx: settlement.transaction, link: explorer.tx(settlement.transaction) };
       payments.push(entry);
       emit({ type: "paid", ...entry, spentUsd: toUsd(spentUnits) });
-      return res.json();
+      return { ok: true, data: await res.json() };
     } catch (e) {
       // The x402 client's own safeguards (Layer 2) blocked it before signing: a refusal, not a failure.
       if (/filtered out by policies|rejected by spendControls/.test(e.message)) {
         payments.push({ why, url, priceUsd: quote.priceUsd, paid: false, reason: "blocked by the x402 client's safeguard" });
         emit({ type: "refused", url, rule: "client safeguard", reason: "price changed or exceeded the client cap; nothing was signed" });
-        return null;
+        return { ok: false, reason: "blocked by the x402 client's safeguard" };
       }
       payments.push({ why, url, priceUsd: quote.priceUsd, paid: false, reason: e.message });
       emit({ type: "error", url, message: e.message, hint: "Check the explorer: a settlement can land even when the server reports a failure." });
-      return null;
+      return { ok: false, reason: e.message };
     }
   }
 
-  // The plan. Swap this for an LLM planner later; the pay-or-refuse layer above stays the same.
-  await call("Find suppliers (free search)", `/search?q=${encodeURIComponent(task)}`);
-  const prices = await call("Get live supplier prices", "/paid/supplier-prices");
-  await call("Check Lagos weather for solar conditions", "/paid/weather?city=Lagos");
-  await call("Get the full market report (nice to have)", "/paid/premium-report");
+  return { call, payments, spentUsd: () => toUsd(spentUnits) };
+}
 
-  const best = prices?.suppliers.filter((s) => s.inStock).sort((a, b) => a.price - b.price)[0];
+// ── The fixed plan (fallback when AGENT_PLANNER=scripted) ──
+async function scriptedPlan(task, wallet) {
+  await wallet.call("Find suppliers (free search)", `/search?q=${encodeURIComponent(task)}`);
+  const prices = await wallet.call("Get live supplier prices", "/paid/supplier-prices");
+  await wallet.call("Check Lagos weather for solar conditions", "/paid/weather?city=Lagos");
+  await wallet.call("Get the full market report (nice to have)", "/paid/premium-report");
+  const best = prices.ok ? prices.data.suppliers.filter((s) => s.inStock).sort((a, b) => a.price - b.price)[0] : null;
   const summary = best
-    ? `Cheapest in stock: ${best.name} at ₦${best.price.toLocaleString()} for a ${prices.product}.`
+    ? `Cheapest in stock: ${best.name} at ₦${best.price.toLocaleString()} for a ${prices.data.product}.`
     : "Could not get supplier prices.";
-  const translated = await call("Translate the summary into Yoruba", `/paid/translate?to=yo&text=${encodeURIComponent(summary)}`);
+  const t = await wallet.call("Translate the summary into Yoruba", `/paid/translate?to=yo&text=${encodeURIComponent(summary)}`);
+  return t.ok ? `${summary} Yoruba: ${t.data.translation}` : summary;
+}
+
+// ── The agent ──────────────────────────────────────────────
+// emit(event) reports every step, so the terminal and the console can show it live.
+export async function runAgent(task, emit = () => {}) {
+  const wallet = createWallet(emit);
+  const planner = config.ai.planner;
+  emit({
+    type: "start", task, planner, model: planner === "ai" ? config.ai.model : null,
+    rules: RULES, wallet: agentPub, walletUsdc: await walletUsdc(),
+  });
+
+  const answer = planner === "ai"
+    ? await runAiPlan(task, { wallet, emit })
+    : await scriptedPlan(task, wallet);
 
   const result = {
-    summary,
-    translation: translated?.translation ?? null,
-    spentUsd: toUsd(spentUnits),
+    summary: answer,
+    spentUsd: wallet.spentUsd(),
     budgetUsd: RULES.taskBudgetUsd,
-    payments,
+    payments: wallet.payments,
     walletUsdc: await walletUsdc(),
   };
   emit({ type: "done", ...result });
@@ -146,7 +170,8 @@ export async function runAgent(task, emit = () => {}) {
 // ── Terminal output ────────────────────────────────────────
 function print(e) {
   const line = {
-    start:   () => `\nTask: ${e.task}\nRules: budget $${e.rules.taskBudgetUsd} · max $${e.rules.maxPerRequestUsd}/request · allowed: ${e.rules.allowedHosts.join(", ")}\nWallet: ${e.wallet.slice(0, 6)}… holds ${e.walletUsdc} ${usdc.code} (hard limit)\n`,
+    start:   () => `\nTask: ${e.task}\nBrain: ${e.planner === "ai" ? `OpenAI ${e.model}` : "scripted plan"}\nRules: budget $${e.rules.taskBudgetUsd} · max $${e.rules.maxPerRequestUsd}/request · allowed: ${e.rules.allowedHosts.join(", ")}\nWallet: ${e.wallet.slice(0, 6)}… holds ${e.walletUsdc} ${usdc.code} (hard limit)\n`,
+    thought: () => `  AI: ${e.text}`,
     step:    () => `→ ${e.why}`,
     free:    () => `   free, no payment needed`,
     quote:   () => `   402: costs $${e.priceUsd}`,
@@ -154,7 +179,7 @@ function print(e) {
     paid:    () => `   ✓ paid · total spent $${e.spentUsd} · ${e.link}`,
     refused: () => `   ✗ decision: refuse (${e.rule}: ${e.reason})`,
     error:   () => `   ✗ ${e.message}\n     ${e.hint}`,
-    done:    () => `\nResult: ${e.summary}\nYoruba: ${e.translation ?? "(skipped)"}\nSpent $${e.spentUsd} of $${e.budgetUsd} budget · ${e.payments.filter((p) => p.paid).length} paid, ${e.payments.filter((p) => !p.paid).length} refused/failed\nWallet now holds ${e.walletUsdc} ${usdc.code}\n`,
+    done:    () => `\nAnswer: ${e.summary}\nSpent $${e.spentUsd} of $${e.budgetUsd} budget · ${e.payments.filter((p) => p.paid).length} paid, ${e.payments.filter((p) => !p.paid).length} refused/failed\nWallet now holds ${e.walletUsdc} ${usdc.code}\n`,
   }[e.type];
   if (line) console.log(line());
 }
