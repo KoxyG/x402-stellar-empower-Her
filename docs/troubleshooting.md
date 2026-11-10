@@ -19,6 +19,9 @@ and paste the agent address shown by `npm run check`.
 A wallet can't hold USDC yet. **Both** wallets need a trustline, including the server wallet
 that receives. Run `npm run setup`.
 
+**`openai` install or start-up errors**
+The OpenAI SDK needs **Node.js 22+**. Check with `node -v`.
+
 **`EADDRINUSE` when starting the server or console**
 Something is already using port 4021 or 4022, usually an old copy still running.
 Stop it (Ctrl+C in its terminal), or change `PORT` / `CONSOLE_PORT` and `API_BASE_URL` in `.env`.
@@ -53,6 +56,36 @@ and retry or request a refund instead of paying again.
 **`All payment requirements were filtered out by policies` / `rejected by spendControls`**
 Not a bug: a safeguard worked. The x402 client refused to sign because the price was higher
 than the agent approved. Nothing was signed and no money moved.
+
+## AI agent
+
+**The "AI agent" option is greyed out in the console**
+`OPENAI_API_KEY` or `OPENAI_MODEL` is missing from `.env`. Add both and restart the console.
+`npm run check` confirms the key works and the model is available.
+
+**`AI model error: 401 …`**
+The OpenAI key is wrong or revoked. Replace `OPENAI_API_KEY` in `.env`.
+
+**`AI model error: 400 Function tools with reasoning_effort are not supported for …`**
+That model needs a different OpenAI API than this kit uses. Use a model that supports
+tool calling in Chat Completions; we tested `gpt-5.4-mini`.
+
+**The AI didn't buy what I expected**
+That's the point: it decides. It prefers free information and buys only what it thinks the
+task needs. If you want it to consider a service, say why it matters in the task.
+
+**OpenAI is slow or down during a demo**
+Switch the console's **Brain** to **Scripted (no AI)**. The payments still work.
+
+## Spending rules
+
+**"Needs your approval" and nothing happens**
+The console is waiting for you: click **Approve** or **Decline**. After
+`AGENT_APPROVAL_TIMEOUT_SECONDS` with no answer, it declines. In the terminal, type `y` or `n`.
+
+**`daily budget: would go over today's … limit`**
+Today's payments are recorded in `.agent-spend-log.json`. Raise `AGENT_DAILY_BUDGET_USD`,
+or on testnet delete that file to start a fresh day.
 
 ## Agent console
 

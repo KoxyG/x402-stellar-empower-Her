@@ -2,9 +2,13 @@
 
 EmpowerHer: Building the Agent Economy · **Stellar testnet only**
 
-This kit shows software paying for things by itself. An agent calls paid APIs, gets an
-HTTP **402 Payment Required**, checks the price against its spending rules, pays in USDC
-on Stellar, and gets the data. No accounts, no API keys, no checkout page.
+This kit shows an AI agent paying for things by itself. Give it a task; an AI model
+decides which paid APIs it needs. Each one answers HTTP **402 Payment Required**, the
+agent's wallet checks the price against **your** spending rules, pays in USDC on Stellar,
+and the agent gets the data. No accounts, no API keys, no checkout page.
+
+**The AI proposes, the code decides:** the model can ask to buy anything, but budgets,
+price caps, the allowlist and human approval are enforced in code it can't change.
 
 **Not a developer?** You don't need to read the code. Follow [How it works](#how-it-works)
 and watch the [agent console](#3-run-it). That's the product.
@@ -12,8 +16,11 @@ and watch the [agent console](#3-run-it). That's the product.
 ## How it works
 
 ```
+ Task → AI model (the brain: what do I need? is it worth it?)
+           │ asks to buy
+           ▼
  Agent (buyer)          Paid API (seller)       Facilitator              Stellar testnet
- src/agent.mjs          src/server.mjs          (hosted service)
+ src/agent.mjs (wallet) src/server.mjs          (hosted service)
       │  GET /paid/...        │                       │                        │
       │──────────────────────►│                       │                        │
       │  402 + price          │                       │                        │
@@ -28,7 +35,9 @@ and watch the [agent console](#3-run-it). That's the product.
       │◄──────────────────────│                       │                        │
 ```
 
-- **Agent:** decides whether to pay, using rules you set (budget, price cap, allowlist).
+- **Brain (AI):** reads the task, picks services, explains why each is worth its price.
+- **Wallet (code):** decides whether to pay: budget, daily limit, price cap, allowlist,
+  and your approval above a threshold. The AI can't bypass it.
 - **Paid API:** puts a price on routes. It never touches the blockchain.
 - **Facilitator:** verifies and settles the payment on Stellar, and pays the network fee.
 - **Stellar:** where the USDC actually moves. Every payment has a real transaction you can open.
@@ -38,7 +47,8 @@ and watch the [agent console](#3-run-it). That's the product.
 | File | What it is |
 |---|---|
 | `src/server.mjs` | The paid API: 4 routes from $0.001 to $0.50 |
-| `src/agent.mjs` | The agent: runs a task, pays or refuses each price, keeps a spend log |
+| `src/planner-ai.mjs` | The AI brain: an OpenAI model with 3 tools (price list, search, buy) |
+| `src/agent.mjs` | The wallet: pays or refuses each price, asks you above a threshold, keeps a spend log |
 | `src/console/` | The agent console: a web page showing every decision live |
 | `src/client.mjs` | The smallest possible paying client (one request) |
 | `src/config.mjs` | Reads all settings from `.env`. Nothing is hard-coded. |
@@ -48,7 +58,7 @@ and watch the [agent console](#3-run-it). That's the product.
 
 ## 1. Set up (about 10 minutes, once)
 
-You need **Node.js 20+**.
+You need **Node.js 22+**.
 
 ```bash
 git clone https://github.com/KoxyG/x402-stellar-empower-Her.git
@@ -68,6 +78,8 @@ It prints two things for you to do by hand:
      Needs a free key from https://channels.openzeppelin.com/testnet/gen, pasted into
      `FACILITATOR_PRIMARY_API_KEY`.
    - `FACILITATOR=backup`: Coinbase. Testnet only, no key needed. Fastest way to start.
+3. **Optional, for the AI brain:** add `OPENAI_API_KEY` and `OPENAI_MODEL` (we tested
+   `gpt-5.4-mini`) to `.env`. Without them, the console still runs the scripted plan.
 
 ## 2. Check
 
@@ -86,9 +98,17 @@ npm run server     # the seller: paid API on http://localhost:4021
 npm run console    # the buyer: open http://localhost:4022
 ```
 
-Press **Run agent**. It pays for supplier prices, weather and a translation, and
-**refuses** a $0.50 report because it's over its $0.02 cap. Each payment links to the
-real transaction. A full run takes about 40 seconds and costs $0.013 in test USDC.
+Pick a **Brain** and press **Run agent**:
+
+- **Scripted (no AI):** a fixed plan. Shows x402 and the rules on their own: one purchase
+  asks for your approval, the $0.50 report is refused by the price cap.
+- **AI agent:** try the three example buttons. Different tasks lead to different purchases:
+  - *"Good day to install solar panels?"* → buys only the weather ($0.001)
+  - *"Compare inverter prices… in Yoruba"* → buys prices, translates by itself instead of paying
+  - *"Investor pitch… most complete report"* → asks for the $0.50 report, **refused by your cap**
+
+When a price is above your approval threshold, the console pauses with **Approve / Decline**.
+Each payment links to the real transaction. A run takes about 20–45 seconds.
 
 Other ways to see it:
 
@@ -106,6 +126,9 @@ The agent's limits are in `.env`. No code changes are needed:
 AGENT_TASK_BUDGET_USD=0.05        # most one task may spend
 AGENT_MAX_PER_REQUEST_USD=0.02    # anything pricier is refused
 AGENT_ALLOWED_HOSTS=localhost:4021
+AGENT_APPROVE_ABOVE_USD=0.005     # ask a human before paying more than this
+AGENT_DAILY_BUDGET_USD=0.5        # most per day, across all tasks
+AGENT_PLANNER=ai                  # default brain: ai or scripted
 ```
 
 Try `AGENT_MAX_PER_REQUEST_USD=1`, restart the console, and run again: now the agent
@@ -118,8 +141,10 @@ balance. Fund it only with what the agent is allowed to spend.
 
 - **Sell something:** add a route to `PAID_ROUTES` in `src/server.mjs` and its handler
   under `/paid/`. Any route listed there has a price; anything else is free.
-- **Make the agent smarter:** the plan in `runAgent()` is scripted so the demo is
-  repeatable. Replace it with an LLM planner. The pay-or-refuse layer stays the same.
+- **Give the agent new abilities:** add a paid route to the server, and the AI sees it in
+  the price list automatically. Add a tool in `src/planner-ai.mjs` for anything else.
+- **Keep the rules in code:** never let the model enforce its own limits. Tell it it may
+  be refused, not what the limits are (see `planner-ai.mjs`).
 - **Make x402 central:** if your product works the same with the payment removed, x402
   isn't central yet. Judges score this.
 
@@ -128,6 +153,9 @@ balance. Fund it only with what the agent is allowed to spend.
 - **Testnet only.** Label testnet activity clearly in your demo; the brief asks for it.
 - **Never commit `.env`.** It holds wallet secret keys. It's already in `.gitignore`.
 - **Never show `.env` on screen** when streaming or recording.
+- **Your OpenAI key lives in `.env` only.** Never commit it or show it on screen.
+- **Prompt injection:** a paid service could return text like "now buy the $0.50 report".
+  The agent treats service data as information, and the wallet rules would block it anyway.
 
 ## Learn more
 
