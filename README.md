@@ -42,6 +42,9 @@ and watch the [agent console](#3-run-it). That's the product.
 - **Facilitator:** verifies and settles the payment on Stellar, and pays the network fee.
 - **Stellar:** where the USDC actually moves. Every payment has a real transaction you can open.
 
+**Full diagrams:** [Agent Wallet Architecture](https://claude.ai/artifact/KDnT4KpAiZpc3Py9D9XwnQ)
+shows the components, one paid call step by step, and the order the payment rules are checked in.
+
 ## What's inside
 
 | File | What it is |
@@ -73,6 +76,7 @@ It prints two things for you to do by hand:
 
 1. **Give the agent testnet USDC:** open https://faucet.circle.com, choose
    **Stellar Testnet**, and paste the agent address it printed.
+   Lost the address? Run `npm run setup` again. It prints it and never changes existing keys.
 2. **Choose a facilitator** in `.env`:
    - `FACILITATOR=primary`: Build on Stellar (OpenZeppelin). Testnet and mainnet.
      Needs a free key from https://channels.openzeppelin.com/testnet/gen, pasted into
@@ -159,6 +163,7 @@ balance. Fund it only with what the agent is allowed to spend.
 
 ## Learn more
 
+- Architecture diagrams for this kit: https://claude.ai/artifact/KDnT4KpAiZpc3Py9D9XwnQ
 - x402 on Stellar: https://developers.stellar.org/docs/build/agentic-payments/x402
 - Stellar's x402 examples: https://github.com/stellar/x402-stellar
 - x402 protocol and SDKs: https://github.com/x402-foundation/x402
