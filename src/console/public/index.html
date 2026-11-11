@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Console</title>
+<style>
+  :root {
+    --bg: #0a0f1e; --bg2: #0e1528; --panel: #121a30; --panel2: #172142; --line: #223056;
+    --text: #e8edff; --muted: #8b96b8; --dim: #5d6888;
+    --accent: #6c8cff; --ok: #2ee59d; --no: #ff5c7a; --warn: #ffb547; --ai: #b98cff;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: radial-gradient(1200px 600px at 10% -10%, #1a2550 0%, transparent 60%),
+                radial-gradient(900px 500px at 110% 0%, #1b1640 0%, transparent 55%), var(--bg);
+    min-height: 100vh;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 56px; }
+
+  /* Header */
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 18px;
+          background: linear-gradient(135deg, var(--accent), var(--ai)); box-shadow: 0 0 24px #6c8cff55; }
+  h1 { font-size: 20px; letter-spacing: .04em; margin: 0; text-transform: uppercase; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; font: 700 12px/1 var(--mono); letter-spacing: .08em;
+           padding: 8px 12px; border-radius: 999px; color: var(--warn); border: 1px solid #ffb54755; background: #ffb5470f; }
+  .badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--warn);
+                   box-shadow: 0 0 10px var(--warn); animation: pulse 2s infinite; }
+
+  /* Panels */
+  .panel { background: linear-gradient(180deg, var(--panel), var(--bg2)); border: 1px solid var(--line);
+           border-radius: 16px; padding: 18px; }
+  h2 { font: 700 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 0 0 14px; }
+
+  /* Task + controls */
+  form { display: flex; gap: 10px; }
+  input[type=text] { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 12px 14px; border-radius: 10px;
+                     border: 1px solid var(--line); background: var(--bg); color: var(--text); outline: none; }
+  input[type=text]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #6c8cff33; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 10px; cursor: pointer; color: #fff; }
+  #run { padding: 12px 22px; background: linear-gradient(135deg, var(--accent), #8a6cff);
+         box-shadow: 0 6px 20px #6c8cff44; letter-spacing: .03em; }
+  #run:disabled { opacity: .55; cursor: progress; box-shadow: none; }
+  .brain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 14px; }
+  .brain b { font: 700 12px/1 var(--mono); letter-spacing: .1em; color: var(--muted); text-transform: uppercase; margin-right: 4px; }
+  .brain label { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px;
+                 border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-size: 14px; }
+  .brain label:has(input:checked) { border-color: var(--accent); background: #6c8cff1f; box-shadow: 0 0 14px #6c8cff33; }
+  .brain label.off { opacity: .45; cursor: not-allowed; }
+  .brain input { accent-color: var(--accent); }
+  .brain small { color: var(--muted); flex-basis: 100%; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .examples .ex { font-weight: 500; font-size: 13px; padding: 7px 12px; text-align: left; color: var(--text);
+                  background: var(--panel2); border: 1px solid var(--line); }
+  .examples .ex:hover { border-color: var(--accent); }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+  .tile { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  .tile .label { font: 700 11px/1 var(--mono); letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+  .tile .value { font-size: 28px; font-weight: 800; margin-top: 8px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .tile .hint { color: var(--dim); font-size: 12px; margin-top: 4px; }
+  .tile.spent .value { color: var(--ok); text-shadow: 0 0 18px #2ee59d44; }
+  .bar { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--ok), #7cf5c4);
+               box-shadow: 0 0 12px var(--ok); transition: width .5s ease; }
+  .tile a { color: var(--accent); text-decoration: none; font-family: var(--mono); font-size: 12px; }
+  .rules { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .rule { font: 12px/1 var(--mono); color: var(--muted); padding: 6px 10px; border-radius: 6px; border: 1px dashed var(--line); }
+  .rule b { color: var(--text); font-weight: 700; }
+
+  /* Layout */
+  .grid { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(2, 1fr); } }
+
+  /* Timeline */
+  ol { list-style: none; margin: 0; padding: 0; }
+  #timeline { position: relative; }
+  .step { position: relative; padding: 2px 0 16px 34px; }
+  .step::before { content: ""; position: absolute; left: 10px; top: 22px; bottom: -2px; width: 2px; background: var(--line); }
+  .step:last-child::before { display: none; }
+  .step::after { content: ""; position: absolute; left: 3px; top: 4px; width: 16px; height: 16px; border-radius: 50%;
+                 background: var(--bg); border: 2px solid var(--dim); }
+  .step.free::after  { border-color: var(--accent); }
+  .step.wait::after  { border-color: var(--warn); border-top-color: transparent; animation: spin 1s linear infinite; }
+  .step.paid::after  { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 12px var(--ok); }
+  .step.refused::after { background: var(--no); border-color: var(--no); box-shadow: 0 0 12px var(--no); }
+  .step .why { font-weight: 650; }
+  .detail { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  .detail.ok { color: var(--ok); } .detail.no { color: var(--no); }
+  .detail.thought { color: #d9c7ff; font-style: italic; }
+  .chip { display: inline-block; font: 700 11px/1 var(--mono); padding: 4px 7px; border-radius: 6px; margin-right: 8px; vertical-align: 1px; }
+  .chip.c402 { color: var(--warn); background: #ffb5471a; border: 1px solid #ffb54755; }
+  .chip.cai  { color: var(--ai); background: #b98cff1a; border: 1px solid #b98cff55; font-style: normal; }
+  .spin::after { content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 8px; vertical-align: -1px;
+                 border: 2px solid var(--ok); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+  .detail.ask { color: var(--text); border: 1px solid var(--warn); background: #ffb54712; border-radius: 12px;
+                padding: 12px 14px; margin-top: 8px; animation: glow 1.6s ease-in-out infinite; }
+  .detail.ask button { font-size: 14px; padding: 8px 16px; margin: 8px 8px 0 0; }
+  .detail.ask button.approve { background: var(--ok); color: #04261a; }
+  .detail.ask button.decline { background: var(--no); }
+  .detail.ask button:disabled { opacity: .4; }
+  .empty { color: var(--dim); font-size: 14px; }
+
+  /* Spend log */
+  .log li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .log li:first-child { border-top: 0; }
+  .log .what { min-width: 0; }
+  .log .what small { display: block; color: var(--dim); font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log .amt { font: 800 15px/1.4 var(--mono); white-space: nowrap; }
+  .ok { color: var(--ok); } .no { color: var(--no); }
+  a { color: var(--accent); }
+
+  /* Answer */
+  #result { margin-top: 16px; display: none; border-color: #2ee59d55; box-shadow: 0 0 30px #2ee59d14; }
+  #result .answer { font-size: 17px; line-height: 1.6; margin: 0 0 10px; }
+  #result .meta { color: var(--muted); font-size: 13px; font-family: var(--mono); margin: 0; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @keyframes glow { 50% { box-shadow: 0 0 18px #ffb54744; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">◆</div>
+      <div>
+        <h1>Agent Console</h1>
+        <div class="sub">x402 agentic payments on Stellar</div>
+      </div>
+    </div>
+    <span class="badge" id="network">TESTNET</span>
+  </header>
+
+  <section class="panel">
+    <form id="form">
+      <input type="text" id="task" maxlength="200" value="Find me the cheapest 5kVA solar inverter and someone to install it" aria-label="Task for the agent">
+      <button id="run" type="submit">▶ Run agent</button>
+    </form>
+    <div class="brain" role="radiogroup" aria-label="Agent brain">
+      <b>Brain</b>
+      <label><input type="radio" name="planner" value="scripted"> Scripted (no AI)</label>
+      <label id="aiLabel"><input type="radio" name="planner" value="ai"> <span id="aiText">AI agent</span></label>
+      <small id="brainNote"></small>
+    </div>
+    <div class="examples" id="examples">
+      <button type="button" class="ex">Is today a good day to install solar panels?</button>
+      <button type="button" class="ex">Find me the cheapest 5kVA solar inverter and someone to install it</button>
+      <button type="button" class="ex">I'm pitching investors tomorrow. Get me the most complete, authoritative solar market report available.</button>
+    </div>
+
+    <div class="tiles">
+      <div class="tile spent">
+        <div class="label">Spent this task</div>
+        <div class="value" id="spentVal">$0</div>
+        <div class="bar"><div id="bar"></div></div>
+      </div>
+      <div class="tile">
+        <div class="label">Task budget</div>
+        <div class="value" id="budgetVal">–</div>
+        <div class="hint">most one task may spend</div>
+      </div>
+      <div class="tile">
+        <div class="label">Today</div>
+        <div class="value" id="today">–</div>
+        <div class="hint" id="dailyHint">of daily limit</div>
+      </div>
+      <div class="tile">
+        <div class="label">Wallet · hard limit</div>
+        <div class="value" id="balance">–</div>
+        <div class="hint" id="walletLink"></div>
+      </div>
+    </div>
+    <div class="rules" id="rules"></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>What the agent is doing</h2>
+      <ol id="timeline"><li class="empty">Pick a brain, choose a task and press Run.</li></ol>
+    </section>
+    <section class="panel">
+      <h2>Spend log</h2>
+      <ol class="log" id="log"><li class="empty">No payments yet.</li></ol>
+    </section>
+  </div>
+
+  <section class="panel" id="result">
+    <h2>Answer</h2>
+    <div id="resultBody"></div>
+  </section>
+</main>
+
+<script>
+  // Everything the agent does arrives as an event from /api/run. Text is set with
+  // textContent (never innerHTML) so nothing from a task or a server can inject markup.
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const link = (href, text) => { const a = el("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; };
+  const usd = (n) => `$${Number(n).toFixed(3).replace(/\.?0+$/, "") || 0}`;
+  const chip = (cls, text) => el("span", `chip ${cls}`, text);
+
+  let cfg, current, timer;
+
+  async function loadConfig() {
+    cfg = await fetch("/api/config").then((r) => r.json());
+    $("network").textContent = cfg.network.toUpperCase();
+    $("budgetVal").textContent = usd(cfg.rules.taskBudgetUsd);
+    $("dailyHint").textContent = `of ${usd(cfg.rules.dailyBudgetUsd)} daily limit`;
+    $("walletLink").replaceChildren(link(`${cfg.explorerUrl}/account/${cfg.wallet}`, `${cfg.wallet.slice(0, 6)}…${cfg.wallet.slice(-4)} ↗`));
+    const r = $("rules"); r.replaceChildren();
+    const rule = (label, value) => { const s = el("span", "rule", `${label} `); s.append(el("b", null, value)); r.append(s); };
+    rule("max per request", usd(cfg.rules.maxPerRequestUsd));
+    rule("ask me above", usd(cfg.rules.approveAboveUsd));
+    rule("allowed", cfg.rules.allowedHosts.join(", "));
+    setupBrainSwitch();
+    showToday(cfg.todayUsd);
+    setSpent(0);
+  }
+
+  // Brain switch: default from .env; AI disabled if no OpenAI key/model is configured.
+  const selectedPlanner = () => document.querySelector('input[name="planner"]:checked')?.value || "scripted";
+  function setupBrainSwitch() {
+    const ai = document.querySelector('input[value="ai"]');
+    $("aiText").textContent = cfg.aiModel ? `AI agent · ${cfg.aiModel}` : "AI agent";
+    if (!cfg.aiAvailable) {
+      ai.disabled = true; $("aiLabel").classList.add("off");
+      $("brainNote").textContent = "Add OPENAI_API_KEY and OPENAI_MODEL to .env to enable the AI.";
+    }
+    const start = cfg.aiAvailable ? cfg.defaultPlanner : "scripted";
+    document.querySelector(`input[value="${start}"]`).checked = true;
+    updateBrainNote();
+    document.querySelectorAll('input[name="planner"]').forEach((r) => r.addEventListener("change", updateBrainNote));
+  }
+  function updateBrainNote() {
+    if (!cfg.aiAvailable) return;
+    $("brainNote").textContent = selectedPlanner() === "scripted"
+      ? "Fixed plan: the task text is ignored. Shows x402 and the rules, without AI."
+      : "The AI reads the task and decides what to buy. Your rules still decide what gets paid.";
+  }
+
+  const showToday = (todayUsd) => { $("today").textContent = usd(todayUsd); };
+  async function refreshToday() {
+    try { showToday((await fetch("/api/config").then((r) => r.json())).todayUsd); } catch {}
+  }
+
+  function setSpent(spent) {
+    $("bar").style.width = `${Math.min(100, (spent / cfg.rules.taskBudgetUsd) * 100)}%`;
+    $("spentVal").textContent = usd(spent);
+  }
+
+  // Adds a line under the current step (or to the timeline if no step has started yet).
+  function addDetail(text, cls) {
+    const d = el("div", `detail ${cls || ""}`, text);
+    (current ?? $("timeline")).append(d);
+    return d;
+  }
+  const setState = (state) => { if (current) current.className = `step ${state}`; };
+
+  function logEntry(e, paid) {
+    const log = $("log");
+    log.querySelector(".empty")?.remove();
+    const li = el("li");
+    const what = el("div", "what", new URL(e.url).pathname.replace("/paid/", ""));
+    what.append(paid ? (() => { const s = el("small"); s.append(link(e.link, `tx ${e.tx.slice(0, 10)}… ↗`)); return s; })()
+                     : el("small", "no", e.reason));
+    li.append(what, el("span", `amt ${paid ? "ok" : "no"}`, paid ? usd(e.priceUsd) : `✗ ${usd(e.priceUsd)}`));
+    log.append(li);
+  }
+
+  // Shows "Settling on Stellar… 7s" while the facilitator settles, so the wait is visible.
+  function startTimer(node) {
+    const t0 = Date.now();
+    timer = setInterval(() => { node.textContent = `Settling on Stellar… ${Math.round((Date.now() - t0) / 1000)}s`; }, 500);
+  }
+  const stopTimer = () => clearInterval(timer);
+
+  const handlers = {
+    start(e) {
+      current = null;
+      $("timeline").replaceChildren(); $("log").replaceChildren(el("li", "empty", "No payments yet."));
+      $("result").style.display = "none"; setSpent(0);
+      $("balance").textContent = `${e.walletUsdc}`;
+    },
+    step(e) { current = el("li", "step"); current.append(el("div", "why", e.why)); $("timeline").append(current); },
+    free() { setState("free"); addDetail("Free: no payment needed", "ok"); },
+    thought(e) {
+      const d = el("div", "detail thought"); d.append(chip("cai", "AI"), e.text);
+      (current ?? $("timeline")).append(d);
+    },
+    quote(e) { setState("wait"); const d = addDetail(""); d.append(chip("c402", "402"), `Payment required: ${usd(e.priceUsd)}`); },
+    approval(e) {
+      const box = addDetail(`⏸ Needs your approval: ${e.reason}.`, "ask");
+      box.append(document.createElement("br"));
+      const answer = async (approved) => {
+        box.querySelectorAll("button").forEach((b) => (b.disabled = true));
+        box.append(el("b", approved ? "ok" : "no", approved ? " Approved by you" : " Declined by you"));
+        await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ approved }) });
+      };
+      const yes = el("button", "approve", "✓ Approve"); yes.type = "button"; yes.onclick = () => answer(true);
+      const no = el("button", "decline", "✗ Decline"); no.type = "button"; no.onclick = () => answer(false);
+      box.append(yes, no);
+    },
+    paying(e) { addDetail(`✓ Decision: pay (${e.reason})`, "ok"); startTimer(addDetail("Settling on Stellar…", "spin")); },
+    paid(e) {
+      stopTimer(); current?.querySelector(".spin")?.classList.remove("spin"); setState("paid");
+      const d = addDetail("✓ Paid · ", "ok"); d.append(link(e.link, "view on explorer ↗"));
+      setSpent(e.spentUsd); logEntry(e, true);
+    },
+    refused(e) { stopTimer(); setState("refused"); addDetail(`✗ Refused (${e.rule}: ${e.reason})`, "no"); logEntry(e, false); },
+    error(e) { stopTimer(); setState("refused"); addDetail(`✗ ${e.message}. ${e.hint}`, "no"); },
+    done(e) {
+      const body = $("resultBody"); body.replaceChildren();
+      body.append(el("p", "answer", e.summary));
+      const paid = e.payments.filter((p) => p.paid).length, refused = e.payments.length - paid;
+      body.append(el("p", "meta", `spent ${usd(e.spentUsd)} of ${usd(e.budgetUsd)} · ${paid} paid · ${refused} refused · wallet ${e.walletUsdc} ${cfg.asset}`));
+      $("result").style.display = "block";
+      $("balance").textContent = `${e.walletUsdc}`;
+      refreshToday();
+    },
+    fatal(e) { stopTimer(); addDetail(`✗ Stopped: ${e.message}`, "no"); },
+  };
+
+  $("form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    $("run").disabled = true;
+    let finished = false;
+    const source = new EventSource(`/api/run?task=${encodeURIComponent($("task").value)}&planner=${selectedPlanner()}`);
+    const finish = () => { finished = true; source.close(); stopTimer(); $("run").disabled = false; };
+    source.onmessage = (m) => {
+      const e = JSON.parse(m.data);
+      handlers[e.type]?.(e);
+      if (e.type === "done" || e.type === "fatal") finish();
+    };
+    // IMPORTANT: EventSource reconnects automatically, which would start a second (paid) run.
+    // Close on any error instead (also covers "agent already running").
+    source.onerror = () => {
+      if (!finished) addDetail("Connection closed. Is the console server running, or is a run already in progress?", "no");
+      finish();
+    };
+  });
+
+  $("examples").addEventListener("click", (ev) => {
+    if (ev.target.classList.contains("ex")) $("task").value = ev.target.textContent;
+  });
+
+  loadConfig().catch(() => { $("rules").textContent = "Could not load config. Is the console server running?"; });
+</script>
+</body>
+</html>
