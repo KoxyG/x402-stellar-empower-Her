@@ -11,7 +11,8 @@
     "server": "node src/server.mjs",
     "client": "node src/client.mjs",
     "agent": "node src/agent.mjs",
-    "console": "node src/console/app.mjs"
+    "console": "node src/console/app.mjs",
+    "start": "node scripts/start.mjs"
   },
   "engines": {
     "node": ">=22"

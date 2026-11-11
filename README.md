@@ -152,6 +152,22 @@ balance. Fund it only with what the agent is allowed to spend.
 - **Make x402 central:** if your product works the same with the payment removed, x402
   isn't central yet. Judges score this.
 
+## Put it online (Render)
+
+The console holds the agent's wallet key, so anyone with the link can run the agent
+and spend from that wallet. Use a testnet wallet with a small balance.
+
+1. On https://render.com: **New → Web Service**, connect this repo, choose the branch.
+2. Build command `npm ci`, start command `npm start`.
+3. **Environment → Add from .env:** paste your `.env`, then **delete `PORT`**
+   (Render sets it) and `STELLAR_RECIPIENT_SECRET` (the app never uses it).
+4. Raise `AGENT_DAILY_BUDGET_USD` (e.g. `5`) so visitors don't use up the day's budget.
+5. Deploy, then open the `https://….onrender.com` link.
+
+`npm start` runs both servers: the console on Render's public port, the paid API on
+port 4021 inside the service. Limits: one run at a time, and one shared Approve button.
+On the free plan the service sleeps after 15 minutes idle, and the next visitor waits about a minute.
+
 ## Safety
 
 - **Testnet only.** Label testnet activity clearly in your demo; the brief asks for it.
