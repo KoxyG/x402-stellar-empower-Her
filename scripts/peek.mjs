@@ -1,9 +1,9 @@
 // Shows what a 402 looks like, in plain English. Makes NO payment.
-// Usage: npm run peek                 (defaults to /paid/weather)
-//        npm run peek /paid/premium-report
+// Usage: npm run peek                 (defaults to /paid/sun-forecast)
+//        npm run peek /paid/market-report
 import { config } from "../src/config.mjs";
 
-const url = `${config.apiBaseUrl}${process.argv[2] || "/paid/weather"}`;
+const url = `${config.apiBaseUrl}${process.argv[2] || "/paid/sun-forecast"}`;
 const res = await fetch(url);
 console.log(`\n${res.status} ${res.statusText}  ←  GET ${url}`);
 

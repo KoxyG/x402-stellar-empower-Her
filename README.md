@@ -46,7 +46,7 @@ and watch the [agent console](#3-run-it). That's the product.
 
 | File | What it is |
 |---|---|
-| `src/server.mjs` | The paid API: 4 routes from $0.001 to $0.50 |
+| `src/server.mjs` | The paid API, a "Solar Data" shop: sun forecast $0.001 · installers $0.002 · supplier prices $0.01 · market report $0.50 (demo data) |
 | `src/planner-ai.mjs` | The AI brain: an OpenAI model with 3 tools (price list, search, buy) |
 | `src/agent.mjs` | The wallet: pays or refuses each price, asks you above a threshold, keeps a spend log |
 | `src/console/` | The agent console: a web page showing every decision live |
@@ -103,8 +103,8 @@ Pick a **Brain** and press **Run agent**:
 - **Scripted (no AI):** a fixed plan. Shows x402 and the rules on their own: one purchase
   asks for your approval, the $0.50 report is refused by the price cap.
 - **AI agent:** try the three example buttons. Different tasks lead to different purchases:
-  - *"Good day to install solar panels?"* → buys only the weather ($0.001)
-  - *"Compare inverter prices… in Yoruba"* → buys prices, translates by itself instead of paying
+  - *"Good day to install solar panels?"* → buys only the sun forecast ($0.001)
+  - *"Cheapest 5kVA inverter and someone to install it"* → buys prices (asks your approval) and installers
   - *"Investor pitch… most complete report"* → asks for the $0.50 report, **refused by your cap**
 
 When a price is above your approval threshold, the console pauses with **Approve / Decline**.

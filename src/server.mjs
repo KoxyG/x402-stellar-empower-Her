@@ -19,10 +19,10 @@ const usd = (dollars) => ({
 });
 
 const PAID_ROUTES = {
-  "GET /weather":         { price: 0.001, description: "Current weather for a city" },
-  "GET /supplier-prices": { price: 0.01,  description: "Solar inverter prices from Lagos suppliers" },
-  "GET /translate":       { price: 0.002, description: "Translate a short text" },
-  "GET /premium-report":  { price: 0.5,   description: "Full market report (priced high to test the agent's limits)" },
+  "GET /sun-forecast":    { price: 0.001, description: "Today's solar conditions: sun hours, cloud cover, rain chance" },
+  "GET /installers":      { price: 0.002, description: "Certified solar installers with ratings and availability" },
+  "GET /supplier-prices": { price: 0.01,  description: "Current 5kVA solar inverter prices from suppliers" },
+  "GET /market-report":   { price: 0.5,   description: "Full residential solar market report (priced high to test the agent's limits)" },
 };
 
 const routesConfig = Object.fromEntries(
@@ -74,31 +74,41 @@ if (StrKey.isValidEd25519PublicKey(config.recipient)) {
   app.use("/paid", (_req, res) => res.status(503).json({ error: "Payments not configured on this server." }));
 }
 
-// ── Paid routes (demo data) ────────────────────────────────
-app.get("/paid/weather", (req, res) => {
-  res.json({ city: req.query.city || "Lagos", tempC: 31, condition: "Partly cloudy", demo: true });
+// ── Paid routes (demo data: fixed sample values, marked demo: true) ──
+const where = (req) => String(req.query.location || "your area").slice(0, 80);
+
+app.get("/paid/sun-forecast", (req, res) => {
+  res.json({ location: where(req), sunHours: 6.5, cloudCover: "25%", rainChance: "10%",
+             verdict: "Good conditions for solar output and rooftop installation", demo: true });
 });
 
-app.get("/paid/supplier-prices", (_req, res) => {
+app.get("/paid/installers", (req, res) => {
   res.json({
-    product: "5kVA hybrid solar inverter",
-    currency: "NGN",
-    suppliers: [
-      { name: "Supplier A (Ikeja)",  price: 455000, inStock: true },
-      { name: "Supplier B (Lekki)",  price: 412000, inStock: true },
-      { name: "Supplier C (Yaba)",   price: 438500, inStock: false },
+    location: where(req),
+    installers: [
+      { name: "Apex Solar Installs",  rating: 4.8, nextAvailable: "in 2 days", priceFromUsd: 250 },
+      { name: "GreenRoof Energy",     rating: 4.5, nextAvailable: "tomorrow",  priceFromUsd: 220 },
+      { name: "PowerUp Technicians",  rating: 4.2, nextAvailable: "in 5 days", priceFromUsd: 180 },
     ],
     demo: true,
   });
 });
 
-app.get("/paid/translate", (req, res) => {
-  const text = String(req.query.text || "").slice(0, 200);
-  res.json({ text, to: req.query.to || "yo", translation: `[demo translation] ${text}`, demo: true });
+app.get("/paid/supplier-prices", (_req, res) => {
+  res.json({
+    product: "5kVA hybrid solar inverter",
+    currency: "USD",
+    suppliers: [
+      { name: "SunVolt Supply", price: 780, inStock: true },
+      { name: "BrightGrid",     price: 705, inStock: true },
+      { name: "Helios Depot",   price: 745, inStock: false },
+    ],
+    demo: true,
+  });
 });
 
-app.get("/paid/premium-report", (_req, res) => {
-  res.json({ title: "Lagos Solar Market Report", pages: 42, summary: "…", demo: true });
+app.get("/paid/market-report", (_req, res) => {
+  res.json({ title: "Residential Solar Market Report", pages: 42, summary: "…", demo: true });
 });
 
 // ── Free routes ────────────────────────────────────────────
@@ -116,10 +126,10 @@ app.get("/catalog", (_req, res) => {
 
 // A free step for the agent: finding suppliers costs nothing, detailed prices do.
 app.get("/search", (req, res) => {
-  res.json({ query: req.query.q || "", results: ["Supplier A (Ikeja)", "Supplier B (Lekki)", "Supplier C (Yaba)"], demo: true });
+  res.json({ query: req.query.q || "", results: ["SunVolt Supply", "BrightGrid", "Helios Depot"], demo: true });
 });
 
 app.listen(config.port, () => {
   console.log(`\nPaid API on http://localhost:${config.port}  ·  ${network}  ·  facilitator: ${fac.name}`);
-  console.log(`Try:  curl -i http://localhost:${config.port}/paid/weather   (expect 402)\n`);
+  console.log(`Try:  npm run peek   (shows the 402 for /paid/sun-forecast)\n`);
 });

@@ -44,7 +44,7 @@ app.post("/api/approve", (req, res) => {
 // Runs the agent and streams each event to the page (Server-Sent Events).
 app.get("/api/run", async (req, res) => {
   if (running) return res.status(409).json({ error: "The agent is already running." });
-  const task = String(req.query.task || "").trim().slice(0, 200) || "Compare solar inverter prices in Lagos";
+  const task = String(req.query.task || "").trim().slice(0, 200) || "Find me the cheapest 5kVA solar inverter and someone to install it";
   running = true;
   res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
   const send = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`);

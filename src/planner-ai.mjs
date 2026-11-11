@@ -36,10 +36,10 @@ const TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          path: { type: "string", description: "Service path from list_services, e.g. /paid/weather" },
+          path: { type: "string", description: "Service path from list_services, e.g. /paid/sun-forecast" },
           params: {
             type: "object",
-            description: 'Query parameters, e.g. {"city": "Lagos"}',
+            description: 'Optional query parameters, e.g. {"location": "<a place named in the task>"}',
             additionalProperties: { type: "string" },
           },
           reason: { type: "string", description: "One sentence: why this purchase is worth its price for the task." },

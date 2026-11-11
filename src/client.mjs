@@ -1,14 +1,14 @@
 // The paying client: a stand-in for an agent. It asks for a paid route, gets a 402,
 // signs the USDC payment, retries, and prints the data plus the on-chain proof.
-// Usage: npm run client              (defaults to /paid/weather)
-//        npm run client /paid/translate
+// Usage: npm run client              (defaults to /paid/sun-forecast)
+//        npm run client /paid/installers
 import { Keypair } from "@stellar/stellar-sdk";
 import { wrapFetchWithPaymentFromConfig, decodePaymentResponseHeader } from "@x402/fetch";
 import { createEd25519Signer } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
 import { config, explorer } from "./config.mjs";
 
-const url = `${config.apiBaseUrl}${process.argv[2] || "/paid/weather"}`;
+const url = `${config.apiBaseUrl}${process.argv[2] || "/paid/sun-forecast"}`;
 
 let agentPub;
 try { agentPub = Keypair.fromSecret(config.agentSecret).publicKey(); }

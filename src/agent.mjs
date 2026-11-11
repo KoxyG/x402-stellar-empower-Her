@@ -165,14 +165,16 @@ function createWallet(emit, approve) {
 async function scriptedPlan(task, wallet) {
   await wallet.call("Find suppliers (free search)", `/search?q=${encodeURIComponent(task)}`);
   const prices = await wallet.call("Get live supplier prices", "/paid/supplier-prices");
-  await wallet.call("Check Lagos weather for solar conditions", "/paid/weather?city=Lagos");
-  await wallet.call("Get the full market report (nice to have)", "/paid/premium-report");
+  await wallet.call("Check today's solar conditions", "/paid/sun-forecast");
+  await wallet.call("Get the full market report (nice to have)", "/paid/market-report");
+  const installers = await wallet.call("Find a certified installer", "/paid/installers");
+
   const best = prices.ok ? prices.data.suppliers.filter((s) => s.inStock).sort((a, b) => a.price - b.price)[0] : null;
-  const summary = best
-    ? `Cheapest in stock: ${best.name} at ₦${best.price.toLocaleString()} for a ${prices.data.product}.`
-    : "Could not get supplier prices.";
-  const t = await wallet.call("Translate the summary into Yoruba", `/paid/translate?to=yo&text=${encodeURIComponent(summary)}`);
-  return t.ok ? `${summary} Yoruba: ${t.data.translation}` : summary;
+  const top = installers.ok ? [...installers.data.installers].sort((a, b) => b.rating - a.rating)[0] : null;
+  return [
+    best ? `Cheapest in stock: ${best.name} at $${best.price} for a ${prices.data.product}.` : "Could not get supplier prices.",
+    top ? `Top-rated installer: ${top.name} (${top.rating}★, available ${top.nextAvailable}, from $${top.priceFromUsd}).` : "",
+  ].join(" ").trim();
 }
 
 // ── The agent ──────────────────────────────────────────────
@@ -234,6 +236,6 @@ function print(e) {
 
 // Run directly from the terminal (not when imported by the console).
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const task = process.argv.slice(2).join(" ") || "Compare solar inverter prices in Lagos";
+  const task = process.argv.slice(2).join(" ") || "Find me the cheapest 5kVA solar inverter and someone to install it";
   await runAgent(task, print, { approve: askInTerminal });
 }
