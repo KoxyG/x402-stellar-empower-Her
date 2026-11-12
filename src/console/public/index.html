@@ -145,9 +145,9 @@
       <input type="text" id="task" maxlength="200" value="Find me the cheapest 5kVA solar inverter and someone to install it" aria-label="Task for the agent">
       <button id="run" type="submit">▶ Run agent</button>
     </form>
-    <div class="brain" role="radiogroup" aria-label="Agent brain">
-      <b>Brain</b>
-      <label><input type="radio" name="planner" value="scripted"> Scripted (no AI)</label>
+    <div class="brain" role="radiogroup" aria-label="Mode">
+      <b>Mode</b>
+      <label><input type="radio" name="planner" value="scripted"> Scripted client (no AI)</label>
       <label id="aiLabel"><input type="radio" name="planner" value="ai"> <span id="aiText">AI agent</span></label>
       <small id="brainNote"></small>
     </div>
@@ -243,7 +243,7 @@
   function updateBrainNote() {
     if (!cfg.aiAvailable) return;
     $("brainNote").textContent = selectedPlanner() === "scripted"
-      ? "Fixed plan: the task text is ignored. Shows x402 and the rules, without AI."
+      ? "Not an agent: a fixed script that pays automatically. The task text is ignored."
       : "The AI reads the task and decides what to buy. Your rules still decide what gets paid.";
   }
 
