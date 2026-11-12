@@ -162,12 +162,20 @@ function createWallet(emit, approve) {
 }
 
 // ── The fixed plan (fallback when AGENT_PLANNER=scripted) ──
-async function scriptedPlan(task, wallet) {
-  await wallet.call("Find suppliers (free search)", `/search?q=${encodeURIComponent(task)}`);
-  const prices = await wallet.call("Get live supplier prices", "/paid/supplier-prices");
-  await wallet.call("Check today's solar conditions", "/paid/sun-forecast");
-  await wallet.call("Get the full market report (nice to have)", "/paid/market-report");
-  const installers = await wallet.call("Find a certified installer", "/paid/installers");
+// The scripted client's fixed plan, announced up front so the UI can show it as a checklist.
+const SCRIPT = [
+  ["Find suppliers (free search)", (task) => `/search?q=${encodeURIComponent(task)}`],
+  ["Get live supplier prices", () => "/paid/supplier-prices"],
+  ["Check today's solar conditions", () => "/paid/sun-forecast"],
+  ["Get the full market report (nice to have)", () => "/paid/market-report"],
+  ["Find a certified installer", () => "/paid/installers"],
+];
+
+async function scriptedPlan(task, wallet, emit) {
+  emit({ type: "plan", steps: SCRIPT.map(([label]) => label) });
+  const results = [];
+  for (const [label, path] of SCRIPT) results.push(await wallet.call(label, path(task)));
+  const [, prices, , , installers] = results;
 
   const best = prices.ok ? prices.data.suppliers.filter((s) => s.inStock).sort((a, b) => a.price - b.price)[0] : null;
   const top = installers.ok ? [...installers.data.installers].sort((a, b) => b.rating - a.rating)[0] : null;
@@ -192,7 +200,7 @@ export async function runAgent(task, emit = () => {}, { approve = async () => fa
 
   const answer = planner === "ai"
     ? await runAiPlan(task, { wallet, emit })
-    : await scriptedPlan(task, wallet);
+    : await scriptedPlan(task, wallet, emit);
 
   const result = {
     summary: answer,
