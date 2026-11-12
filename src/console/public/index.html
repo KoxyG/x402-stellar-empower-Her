@@ -121,6 +121,27 @@
   #result .answer { font-size: 17px; line-height: 1.6; margin: 0 0 10px; }
   #result .meta { color: var(--muted); font-size: 13px; font-family: var(--mono); margin: 0; }
 
+  /* Mode: the AI agent and the scripted client must look different at a glance */
+  body.mode-ai       { --mode: var(--ai); --mode-glow: #b98cff55; }
+  body.mode-scripted { --mode: #8b96b8;   --mode-glow: transparent; }
+  .mode-badge { font: 700 12px/1 var(--mono); letter-spacing: .08em; padding: 8px 12px; border-radius: 999px;
+                color: var(--mode); border: 1px solid var(--mode); box-shadow: 0 0 16px var(--mode-glow); display: none; }
+  body.mode-ai .mode-badge, body.mode-scripted .mode-badge { display: inline-block; }
+  body.mode-ai .panel.work { border-color: #b98cff66; box-shadow: 0 0 30px #b98cff1f; }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--mode);
+              margin-right: 8px; box-shadow: 0 0 10px var(--mode-glow); animation: pulse 1.4s infinite; }
+  .chip.cchose  { color: var(--ai); background: #b98cff1a; border: 1px solid #b98cff55; }
+  .chip.cscript { color: #8b96b8; background: #8b96b81a; border: 1px solid #8b96b855; }
+  .why.quote { font-style: italic; }
+  .thinking { color: var(--ai); font-size: 14px; margin: 2px 0 12px 34px; }
+  .thinking::after { content: "…"; animation: dots 1.2s steps(4) infinite; display: inline-block; width: 1.2em;
+                     overflow: hidden; vertical-align: bottom; }
+  @keyframes dots { from { width: 0; } to { width: 1.2em; } }
+  .plan { border: 1px dashed var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; color: var(--muted); }
+  .plan ol { list-style: decimal; padding-left: 20px; margin: 6px 0 0; }
+  .plan li.done { color: var(--text); } .plan li.done::marker { color: var(--ok); }
+  .plan li.now { color: var(--text); font-weight: 650; }
+
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes pulse { 50% { opacity: .35; } }
   @keyframes glow { 50% { box-shadow: 0 0 18px #ffb54744; } }
@@ -137,7 +158,10 @@
         <div class="sub">x402 agentic payments on Stellar</div>
       </div>
     </div>
-    <span class="badge" id="network">TESTNET</span>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      <span class="mode-badge" id="modeBadge"></span>
+      <span class="badge" id="network">TESTNET</span>
+    </div>
   </header>
 
   <section class="panel">
@@ -183,9 +207,9 @@
   </section>
 
   <div class="grid">
-    <section class="panel">
-      <h2>What the agent is doing</h2>
-      <ol id="timeline"><li class="empty">Pick a brain, choose a task and press Run.</li></ol>
+    <section class="panel work">
+      <h2 id="workTitle">What the agent is doing</h2>
+      <ol id="timeline"><li class="empty">Pick a mode, choose a task and press Run.</li></ol>
     </section>
     <section class="panel">
       <h2>Spend log</h2>
@@ -194,7 +218,7 @@
   </div>
 
   <section class="panel" id="result">
-    <h2>Answer</h2>
+    <h2 id="answerTitle">Answer</h2>
     <div id="resultBody"></div>
   </section>
 </main>
@@ -283,16 +307,49 @@
   }
   const stopTimer = () => clearInterval(timer);
 
+  // Mode of the current run: "ai" or "scripted". It drives colours, labels and titles.
+  let mode = "ai", stepNo = 0, planItems = [];
+  const clearThinking = () => document.querySelectorAll(".thinking").forEach((n) => n.remove());
+
   const handlers = {
     start(e) {
-      current = null;
+      current = null; mode = e.planner; stepNo = 0; planItems = [];
+      document.body.className = `mode-${mode}`;
+      $("modeBadge").textContent = mode === "ai" ? `🧠 AI AGENT · ${e.model}` : "⚙ SCRIPTED CLIENT · no AI";
+      $("workTitle").replaceChildren(el("span", "live-dot"),
+        mode === "ai" ? "AI agent · deciding live" : "Scripted client · following a fixed plan");
       $("timeline").replaceChildren(); $("log").replaceChildren(el("li", "empty", "No payments yet."));
       $("result").style.display = "none"; setSpent(0);
       $("balance").textContent = `${e.walletUsdc}`;
     },
-    step(e) { current = el("li", "step"); current.append(el("div", "why", e.why)); $("timeline").append(current); },
+    // The script shows its whole plan up front: proof that nothing is being decided.
+    plan(e) {
+      const box = el("div", "plan", "Fixed plan (the task text is ignored):");
+      const ol = el("ol");
+      planItems = e.steps.map((s) => { const li = el("li", null, s); ol.append(li); return li; });
+      box.append(ol); $("timeline").append(box);
+    },
+    // The AI is calling OpenAI: show it, until the next event replaces it.
+    thinking() { clearThinking(); $("timeline").append(el("div", "thinking", "🧠 AI is thinking")); },
+    step(e) {
+      clearThinking();
+      current = el("li", "step");
+      const why = el("div", "why");
+      if (mode === "ai") {
+        // Free tool calls get a plain label; purchases show the AI's own reason, in quotes.
+        const isPaid = new URL(e.url).pathname.startsWith("/paid/");
+        why.append(chip("cchose", isPaid ? "AI CHOSE" : "AI TOOL"), isPaid ? `“${e.why}”` : e.why);
+        if (isPaid) why.classList.add("quote");
+      } else {
+        stepNo++;
+        why.append(chip("cscript", `STEP ${stepNo}/${planItems.length}`), e.why);
+        planItems.forEach((li, i) => (li.className = i < stepNo - 1 ? "done" : i === stepNo - 1 ? "now" : ""));
+      }
+      current.append(why); $("timeline").append(current);
+    },
     free() { setState("free"); addDetail("Free: no payment needed", "ok"); },
     thought(e) {
+      clearThinking();
       const d = el("div", "detail thought"); d.append(chip("cai", "AI"), e.text);
       (current ?? $("timeline")).append(d);
     },
@@ -316,9 +373,12 @@
       const d = addDetail("✓ Paid · ", "ok"); d.append(link(e.link, "view on explorer ↗"));
       setSpent(e.spentUsd); logEntry(e, true);
     },
-    refused(e) { stopTimer(); setState("refused"); addDetail(`✗ Refused (${e.rule}: ${e.reason})`, "no"); logEntry(e, false); },
-    error(e) { stopTimer(); setState("refused"); addDetail(`✗ ${e.message}. ${e.hint}`, "no"); },
+    refused(e) { clearThinking(); stopTimer(); setState("refused"); addDetail(`✗ Refused (${e.rule}: ${e.reason})`, "no"); logEntry(e, false); },
+    error(e) { clearThinking(); stopTimer(); setState("refused"); addDetail(`✗ ${e.message}. ${e.hint}`, "no"); },
     done(e) {
+      clearThinking();
+      planItems.forEach((li) => (li.className = "done"));
+      $("answerTitle").textContent = mode === "ai" ? "Answer · written by the AI" : "Result · assembled by the script";
       const body = $("resultBody"); body.replaceChildren();
       body.append(el("p", "answer", e.summary));
       const paid = e.payments.filter((p) => p.paid).length, refused = e.payments.length - paid;
@@ -327,7 +387,7 @@
       $("balance").textContent = `${e.walletUsdc}`;
       refreshToday();
     },
-    fatal(e) { stopTimer(); addDetail(`✗ Stopped: ${e.message}`, "no"); },
+    fatal(e) { clearThinking(); stopTimer(); addDetail(`✗ Stopped: ${e.message}`, "no"); },
   };
 
   $("form").addEventListener("submit", (ev) => {

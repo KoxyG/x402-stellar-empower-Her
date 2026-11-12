@@ -71,6 +71,7 @@ export async function runAiPlan(task, { wallet, emit }) {
   ];
 
   for (let step = 0; step < config.ai.maxSteps; step++) {
+    emit({ type: "thinking" });   // the UI shows "AI is thinking…" until the next event
     let response;
     try {
       response = await client.chat.completions.create({ model: config.ai.model, messages, tools: TOOLS });
