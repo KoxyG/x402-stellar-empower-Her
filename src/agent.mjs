@@ -219,7 +219,7 @@ async function askInTerminal({ why, priceUsd }) {
 
 function print(e) {
   const line = {
-    start:   () => `\nTask: ${e.task}\nBrain: ${e.planner === "ai" ? `OpenAI ${e.model}` : "scripted plan"}\nRules: budget $${e.rules.taskBudgetUsd} · max $${e.rules.maxPerRequestUsd}/request · allowed: ${e.rules.allowedHosts.join(", ")}\nWallet: ${e.wallet.slice(0, 6)}… holds ${e.walletUsdc} ${usdc.code} (hard limit)\n`,
+    start:   () => `\nTask: ${e.task}\nMode: ${e.planner === "ai" ? `AI agent (OpenAI ${e.model})` : "scripted client (no AI)"}\nRules: budget $${e.rules.taskBudgetUsd} · max $${e.rules.maxPerRequestUsd}/request · allowed: ${e.rules.allowedHosts.join(", ")}\nWallet: ${e.wallet.slice(0, 6)}… holds ${e.walletUsdc} ${usdc.code} (hard limit)\n`,
     thought: () => `  AI: ${e.text}`,
     step:    () => `→ ${e.why}`,
     free:    () => `   free, no payment needed`,

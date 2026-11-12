@@ -75,7 +75,7 @@ That's the point: it decides. It prefers free information and buys only what it 
 task needs. If you want it to consider a service, say why it matters in the task.
 
 **OpenAI is slow or down during a demo**
-Switch the console's **Brain** to **Scripted (no AI)**. The payments still work.
+Switch the console's **Mode** to **Scripted client (no AI)**. The payments still work.
 
 ## Spending rules
 

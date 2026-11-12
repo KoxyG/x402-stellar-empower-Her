@@ -45,6 +45,45 @@ and watch the [agent console](#3-run-it). That's the product.
 **Full diagrams:** [Agent Wallet Architecture](https://claude.ai/artifact/KDnT4KpAiZpc3Py9D9XwnQ)
 shows the components, one paid call step by step, and the order the payment rules are checked in.
 
+## Two modes: AI agent vs scripted client
+
+Both modes use the **same wallet**. Only the part that decides *what to buy* changes.
+
+```
+                    runAgent(task, …, { planner })        src/agent.mjs
+                               │
+             ┌─────────────────┴─────────────────┐
+             ▼                                   ▼
+   SCRIPTED CLIENT (no AI)                AI AGENT
+   scriptedPlan()  (agent.mjs)            runAiPlan()  (planner-ai.mjs)
+   a fixed list, written by us:           OpenAI reads the task and picks tools:
+     wallet.call("Find suppliers", …)       list_services → wallet.call(…"/catalog")
+     wallet.call("Get prices", …)           search        → wallet.call(…"/search")
+     wallet.call("Sun forecast", …)         buy(path, why) → wallet.call(why, path)
+     wallet.call("Market report", …)
+     wallet.call("Installer", …)
+             │                                   │
+             └─────────────────┬─────────────────┘
+                               ▼
+                 wallet.call(why, path)   ← THE SAME FUNCTION FOR BOTH
+                               │
+      402 → read price → rules (allowlist, cap, task budget, daily budget, approval)
+      → sign auth entry (x402 client) → retry → facilitator verify + settle
+      → USDC moves → data + receipt → spend log → console events
+```
+
+| | Scripted client | AI agent |
+|---|---|---|
+| Pays by itself with x402 | ✅ | ✅ |
+| Follows your spending rules | ✅ | ✅ |
+| Understands the task | ❌ ignores it | ✅ |
+| Decides what to buy and whether it's worth it | ❌ fixed list | ✅ |
+| Adapts when a purchase is refused | ❌ | ✅ |
+
+**Only the AI mode is an agent.** The scripted client is automated payments: useful as a
+first step, as a fallback if the AI is unavailable, and as proof that the safety lives in
+the wallet, not in the AI. For your hackathon project, build the agent.
+
 ## What's inside
 
 | File | What it is |
@@ -102,9 +141,9 @@ npm run server     # the seller: paid API on http://localhost:4021
 npm run console    # the buyer: open http://localhost:4022
 ```
 
-Pick a **Brain** and press **Run agent**:
+Pick a **Mode** and press **Run agent**:
 
-- **Scripted (no AI):** a fixed plan. Shows x402 and the rules on their own: one purchase
+- **Scripted client (no AI):** a fixed script, not an agent. Shows x402 and the rules on their own: one purchase
   asks for your approval, the $0.50 report is refused by the price cap.
 - **AI agent:** try the three example buttons. Different tasks lead to different purchases:
   - *"Good day to install solar panels?"* → buys only the sun forecast ($0.001)
